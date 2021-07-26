@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.1
+// @version      1.2
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
 // @match        https://dnf.qq.com/cp/*
 // @icon         https://cdn.jsdelivr.net/gh/keyonchen/script/logo.png
-// @updateURL    https://cdn.jsdelivr.net/gh/keyonchen/script/judgecount.meta.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/keyonchen/script/judgecount.user.js
+// @updateURL    https://cdn.jsdelivr.net/gh/keyonchen/script@latest/judgecount.meta.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/keyonchen/script@latest/judgecount.user.js
 // grant         none
 // ==/UserScript==
 
@@ -32,28 +32,34 @@
         head.appendChild(style);
     }
 
-    // 捕获控制台输出信息
-    unsafeWindow.console.log = function(msg){
-        console.log(msg);
-        if(typeof(msg)=="object"){
-            if(msg.hasOwnProperty("jData")){
-                showRoleName(msg.jData.data.defendant_role_name);
-            }
-        };
-    };
-    // 显示角色名
-    function showRoleName(name){
-        var p = document.getElementById("role_name");
-        if(!p){
-            p = document.createElement("p");
-            p.id = "role_name";
-            p.className = "p2";
-            var p1 = document.getElementById("lastTeamTime");
-            p1.parentNode.insertBefore(p,p1);
-        }
-        p.innerHTML = name;
+    // 打印主视角玩家的角色名
+    showRoleName();
+    function showRoleName(){
+        var actualCode = '(' + function() {
+            var old_console_log = window.console.log;
+            window.console.log = function(msg){
+                old_console_log(msg);
+                if(typeof(msg)=="object"){
+                    if(msg.hasOwnProperty("jData")){
+                        var p = document.getElementById("role_name");
+                        if(!p){
+                            p = document.createElement("p");
+                            p.id = "role_name";
+                            p.className = "p2";
+                            var p1 = document.getElementById("lastTeamTime");
+                            p1.parentNode.insertBefore(p,p1);
+                        }
+                        p.innerHTML = msg.jData.data.defendant_role_name;
+                    }
+                };
+            };
+        } + ')();';
+        var script = document.createElement('script');
+        script.textContent = actualCode;
+        (document.head||document.documentElement).appendChild(script);
+        script.remove();
     }
-
+  
     // 审判视频分类层
     const pkcPveLayerOBS = new MutationObserver(function(){
         // 隐藏红色提示栏
@@ -129,6 +135,6 @@
         div.appendChild(input);
         div.appendChild(button);
         return div;
-    };
+    }
 
 })();
