@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.3
+// @version      1.4
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
@@ -48,6 +48,10 @@
     ];
     // 违规对象
     const protagonistKeys = ["4","5"];
+    // 按钮=提交结果
+    const commitKey = [""];
+    // 按钮=[取消,继续审判,修改]
+    const popKeys = ["","",""];
     //------自定义按键列表------
 
     // 打印主视角玩家的角色名
@@ -100,34 +104,48 @@
     const pkcPveLayerOPT = { childList : true };
     pkcPveLayerOBS.observe(pkcPveLayer,pkcPveLayerOPT);
 
-    // 映射自定义按键列表
     if(keyToggle){
-        // 初始化
+        // 初始化映射字典
         let keymap;
-        addKeymap(resultKeys,"#result input[type='radio']");
-        addKeymap(pkcPveKeys,"#pkvPve input[type='checkbox']");
-        addKeymap(protagonistKeys,"#protagonist input[type='radio']");
-        function addKeymap(keys,queryStr){
+        addKeymap(resultKeys,"spsp1","#result input[type='radio']");
+        addKeymap(pkcPveKeys,"spsp1","#pkvPve input[type='checkbox']");
+        addKeymap(protagonistKeys,"spsp1","#protagonist input[type='radio']");
+        addKeymap(commitKey,"spsp1","#judgeCommit");
+        addKeymap(popKeys,"popTeam","button");
+        function addKeymap(keys,parentID,queryStr){
             if(!keymap){
                 keymap = {};
             }
             for (let i = 0; i < keys.length; i++) {
                 var key = keys[i];
+                if(key == ""){
+                    continue;
+                }
                 keymap[key] = {
+                    "parentID":parentID,
                     "queryStr":queryStr,
                     "index":i
                 }
             }
         }
-        // 监听按键抬起事件
+        // 监听抬起事件
+        let parentElement;
         document.addEventListener("keyup", function(e){
-            // 未匹配按键列表或未提供审核项
-            if (!keymap[e.key] || pkcPveLayer.childElementCount == 0) {
+            // 未匹配按键
+            var key = keymap[e.key];
+            if (!key) {
                 return;
             }
-            var key = keymap[e.key];
-            var queryStr = key.queryStr;
-            var items = pkcPveLayer.querySelectorAll(queryStr);
+            // 获取当前父元素
+            if(!parentElement || parentElement.id != key.parentID){
+                parentElement = document.getElementById(key.parentID);
+            }
+            // 父元素处于隐藏状态
+            if(parentElement.style.display == "none"){
+                return;
+            }
+            // 查询子元素
+            var items = parentElement.querySelectorAll(key.queryStr);
             if(items.length == 0){
                 return;
             }
