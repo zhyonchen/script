@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.5
+// @version      1.6
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
@@ -41,13 +41,37 @@
     // 红色警示文：隐藏=true/显示=false
     const hideContent = false;
 
+    // 视频静音播放：启用=true/禁用=false
+    const videoMuted = true;
+
+    // 计数布局：分列布局=true/合并布局=false
+    const splitColumn = false;
+
     // 放大单选框
     let itemCSS = `
         .item .list li input[type='radio']    {zoom: 1.5;-moz-transform: scale(1.5);}
         .item .list li input[type='checkbox'] {zoom: 1.5;-moz-transform: scale(1.5);}
         div {overflow: visible;}
     `;
-    addGlobalStyle(itemCSS);
+
+    // 初始化脚本
+    let keymap,parentElement,radioType;
+    let video = document.getElementById("video_container");
+    let popTeam = document.getElementById("popTeam");
+    InitScript();
+    function InitScript(){
+        addGlobalStyle(itemCSS);
+        showRoleName();
+        listenKeyUp();
+        if(splitColumn){
+            createColumnLayout();
+        }
+        else{
+            createDefaultLayout();
+        }
+    };
+
+    // 添加自定义样式表
     function addGlobalStyle(css) {
         var head, style;
         head = document.getElementsByTagName('head')[0];
@@ -59,7 +83,6 @@
     }
 
     // 打印主视角玩家的角色名
-    showRoleName();
     function showRoleName(){
         var actualCode = '(' + function() {
             var old_console_log = window.console.log;
@@ -76,6 +99,10 @@
                             p1.parentNode.insertBefore(p,p1);
                         }
                         p.innerHTML = msg.jData.data.defendant_role_name;
+                        var access_id = msg.jData.data.access_id;
+                        if(localStorage.getItem("access_id") != access_id){
+                            localStorage.setItem("access_id",access_id);
+                        }
                     }
                 };
             };
@@ -86,32 +113,16 @@
         script.remove();
     }
 
-    // 初始化映射字典
-    if(keyToggle){
-        let keymap;
+    // 监听按键抬起
+    function listenKeyUp(){
+        if(!keyToggle){
+            return;
+        }
         addKeymap(resultKeys,"spsp1","#result input[type='radio']");
         addKeymap(pkcPveKeys,"spsp1","#pkvPve input[type='checkbox']");
         addKeymap(protagonistKeys,"spsp1","#protagonist input[type='radio']");
         addKeymap(commitKey,"spsp1","#judgeCommit");
         addKeymap(popKeys,"popTeam","button");
-        function addKeymap(keys,parentID,queryStr){
-            if(!keymap){
-                keymap = {};
-            }
-            for (let i = 0; i < keys.length; i++) {
-                var key = keys[i];
-                if(key == ""){
-                    continue;
-                }
-                keymap[key] = {
-                    "parentID":parentID,
-                    "queryStr":queryStr,
-                    "index":i
-                }
-            }
-        }
-        // 监听抬起事件
-        let parentElement;
         document.addEventListener("keyup", function(e){
             // 未匹配按键
             var key = keymap[e.key];
@@ -134,14 +145,87 @@
             var index = parseInt(key.index);
             items[index].click();
         });
+
+    }
+    function addKeymap(keys,parentID,queryStr){
+        if(!keymap){
+            keymap = {};
+        }
+        for (let i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            if(key == ""){
+                continue;
+            }
+            keymap[key] = {
+                "parentID":parentID,
+                "queryStr":queryStr,
+                "index":i
+            }
+        }
+    }
+
+    // 计数器默认布局
+    function createDefaultLayout(){
+        var div = document.createElement("div");
+        var totalInput = createInput("totalCount","totalInput","margin-left: 20px;",5);
+        var button = document.createElement("button");
+        var btn_text = document.createTextNode("修改");
+        button.style = "margin-left: 10px;";
+        button.appendChild(btn_text);
+        button.addEventListener('click',function(){
+            var totalCount = parseInt(popTeam.querySelector("#totalInput").value);
+            if(isNaN(totalCount)){
+                alert("请输入正确的数字");
+                return;
+            }
+            localStorage.setItem("totalCount",totalCount);
+            alert("修改成功");
+        });
+        div.appendChild(totalInput);
+        div.appendChild(button);
+        popTeam.lastElementChild.appendChild(div);
+    }
+    // 计数器分列布局
+    function createColumnLayout(){
+        var div = document.createElement("div");
+        var pveInput = createInput("pveCount","pveInput","margin-left: 5px;",1);
+        var pkcInput = createInput("pkcCount","pkcInput","margin-left: 5px;",1);
+        var button = document.createElement("button");
+        var btn_text = document.createTextNode("修改");
+        button.style = "margin-left: 10px;";
+        button.appendChild(btn_text);
+        button.addEventListener('click',function(){
+            var pveCount = parseInt(popTeam.querySelector("#pveInput").value);
+            var pkcCount = parseInt(popTeam.querySelector("#pkcInput").value);
+            if(isNaN(pveCount)||isNaN(pkcCount)){
+                alert("请输入正确的数字");
+                return;
+            }
+            localStorage.setItem("pveCount",pveCount);
+            localStorage.setItem("pkcCount",pkcCount);
+            alert("修改成功");
+        });
+        div.appendChild(pveInput);
+        div.appendChild(pkcInput);
+        div.appendChild(button);
+        popTeam.lastElementChild.appendChild(div);
+    }
+    function createInput(storageId,elementId,style,size){
+        var input = document.createElement("input");
+        input.id = elementId;
+        input.className = "txc";
+        input.style = style;
+        input.value = localStorage.getItem(storageId) || 0;
+        input.size = size;
+        return input;
     }
 
     // 审判视频分类层
     const videoOBS = new MutationObserver(function(){
         // 显示视频进度条
         video.firstElementChild.controls = true;
-        // 手机端自动播放
-        video.firstElementChild.muted = true;
+        // 视频静音播放
+        video.firstElementChild.muted = videoMuted;
         // 获取审核选项层
         var pkcPveLayer = video.parentElement.lastElementChild;
         // 隐藏红色警示文
@@ -173,61 +257,50 @@
                 item.appendChild(span);
             }
         }
+        // 记录审核结果
+        var commitButton = document.getElementById("judgeCommit");
+        commitButton.addEventListener('click',function(){
+            var input = video.parentElement.querySelector("#result input[type='radio']:checked");
+            if(!input){
+                return;
+            }
+            radioType = input.value;
+        });
     });
-    const video = document.getElementById("video_container");
-    const videoOPT = { childList : true };
-    videoOBS.observe(video,videoOPT);
 
     // 审判成功弹出层
     const popTeamOBS = new MutationObserver(function(){
         if(popTeam.style.display != "block"){
             return;
         }
-        // 累加计数
-        var total_count = localStorage.getItem("TotalCount");
-        if(!total_count) {
-            total_count = 0;
-        };
-        total_count = parseInt(total_count) + 1;
-        localStorage.setItem("TotalCount",total_count);
-        // 响应布局
-        var input_count = popTeam.querySelector("#icount");
-        if(input_count){
-            input_count.value = total_count;
+        if(splitColumn){
+            var access_id = localStorage.getItem("access_id");
+            if(access_id == "0_1_5"){
+                updateCount("pkcCount","pkcInput");
+            }
+            if(access_id == "0_1_6"){
+                updateCount("pveCount","pveInput");
+            }
         }
-        else
-        {
-            popTeam.lastElementChild.appendChild(createLayout(total_count));
-        };
+        else{
+            updateCount("totalCount","totalInput");
+        }
     });
-    const popTeam = document.getElementById("popTeam");
-    const popTeamOPT = { attributeFilter:["style"] };
-    popTeamOBS.observe(popTeam, popTeamOPT);
-    // 新建计数器布局
-    function createLayout(count){
-        const div = document.createElement("div");
-        const input = document.createElement("input");
-        input.id = "icount";
-        input.className = "txc";
-        input.style = "margin-left: 20px;";
-        input.value = count;
-        input.size = 5;
-        const button = document.createElement("button");
-        const btn_text = document.createTextNode("修改");
-        button.style = "margin-left: 10px;";
-        button.appendChild(btn_text);
-        button.addEventListener('click',function(){
-            var current_count = parseInt(popTeam.querySelector("#icount").value);
-            if(isNaN(current_count)){
-                alert("请输入正确的数字");
-                return;
-            };
-            localStorage.setItem("TotalCount",current_count);
-            alert("修改成功");
-        });
-        div.appendChild(input);
-        div.appendChild(button);
-        return div;
+    function updateCount(storageId,elementId){
+        if(radioType == 2){
+            return;
+        }
+        var count = localStorage.getItem(storageId);
+        if(!count){
+            count = 0;
+        }
+        count = parseInt(count) + 1;
+        localStorage.setItem(storageId,count);
+        popTeam.querySelector("#"+elementId).value = count;
     }
+
+    // 派遣观察者
+    videoOBS.observe(video, { childList : true });
+    popTeamOBS.observe(popTeam, { attributeFilter:["style"] });
 
 })();
