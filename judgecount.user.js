@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.6
+// @version      1.7
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
 // @match        https://dnf.qq.com/cp/*
-// @icon         https://cdn.jsdelivr.net/gh/keyonchen/script/logo.png
-// @updateURL    https://cdn.jsdelivr.net/gh/keyonchen/script/judgecount.meta.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/keyonchen/script/judgecount.user.js
+// @icon         https://cdn.jsdelivr.net/gh/zhyonchen/script/logo.png
+// @updateURL    https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.meta.js
+// @downloadURL  https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.user.js
 // grant         none
 // ==/UserScript==
 
@@ -33,9 +33,9 @@
     // 违规对象
     const protagonistKeys = ["4","5"];
     // 按钮=["提交结果"]
-    const commitKey = ["`"];
+    const commitKey = ["Escape"];
     // 按钮=["取消","继续审判","修改"]
-    const popKeys = [""," ",""];
+    const popKeys = ["","`",""];
     //------自定义按键列表------
 
     // 红色警示文：隐藏=true/显示=false
@@ -56,7 +56,7 @@
 
     // 初始化脚本
     let keymap,parentElement,radioType;
-    let video = document.getElementById("video_container");
+    let pkcPveTip = document.getElementById("pkcPveTip");
     let popTeam = document.getElementById("popTeam");
     InitScript();
     function InitScript(){
@@ -82,7 +82,7 @@
         head.appendChild(style);
     }
 
-    // 打印主视角玩家的角色名
+    // 捕获控制台信息
     function showRoleName(){
         var actualCode = '(' + function() {
             var old_console_log = window.console.log;
@@ -90,19 +90,11 @@
                 old_console_log(msg);
                 if(typeof(msg)=="object"){
                     if(msg.hasOwnProperty("jData")){
-                        var p = document.getElementById("role_name");
-                        if(!p){
-                            p = document.createElement("p");
-                            p.id = "role_name";
-                            p.className = "p2";
-                            var p1 = document.getElementById("lastTeamTime");
-                            p1.parentNode.insertBefore(p,p1);
-                        }
-                        p.innerHTML = msg.jData.data.defendant_role_name;
                         var access_id = msg.jData.data.access_id;
                         if(localStorage.getItem("access_id") != access_id){
                             localStorage.setItem("access_id",access_id);
                         }
+                        localStorage.setItem("role_name",msg.jData.data.defendant_role_name);
                     }
                 };
             };
@@ -221,11 +213,15 @@
     }
 
     // 审判视频分类层
-    const videoOBS = new MutationObserver(function(){
+    const pkcPveTipOBS = new MutationObserver(function(){
         // 显示视频进度条
+        var video = pkcPveTip.parentElement.firstElementChild;
         video.firstElementChild.controls = true;
         // 视频静音播放
         video.firstElementChild.muted = videoMuted;
+        // 嵌入玩家角色名
+        video.insertBefore(createRoleNameText(),video.firstElementChild);
+        video.appendChild(createRoleNameText());
         // 获取审核选项层
         var pkcPveLayer = video.parentElement.lastElementChild;
         // 隐藏红色警示文
@@ -267,6 +263,13 @@
             radioType = input.value;
         });
     });
+    function createRoleNameText(){
+        var text = document.createElement("p");
+        text.className = "p2";
+        text.style = "position:absolute;"
+        text.innerHTML = localStorage.getItem("role_name");
+        return text;
+    }
 
     // 审判成功弹出层
     const popTeamOBS = new MutationObserver(function(){
@@ -298,9 +301,8 @@
         localStorage.setItem(storageId,count);
         popTeam.querySelector("#"+elementId).value = count;
     }
-
     // 派遣观察者
-    videoOBS.observe(video, { childList : true });
+    pkcPveTipOBS.observe(pkcPveTip, { childList : true });
     popTeamOBS.observe(popTeam, { attributeFilter:["style"] });
 
 })();
