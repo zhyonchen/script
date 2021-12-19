@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.7
+// @version      1.8
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
@@ -55,7 +55,7 @@
     `;
 
     // 初始化脚本
-    let keymap,parentElement,radioType;
+    let keymap,parentElement;
     let pkcPveTip = document.getElementById("pkcPveTip");
     let popTeam = document.getElementById("popTeam");
     InitScript();
@@ -253,15 +253,6 @@
                 item.appendChild(span);
             }
         }
-        // 记录审核结果
-        var commitButton = document.getElementById("judgeCommit");
-        commitButton.addEventListener('click',function(){
-            var input = video.parentElement.querySelector("#result input[type='radio']:checked");
-            if(!input){
-                return;
-            }
-            radioType = input.value;
-        });
     });
     function createRoleNameText(){
         var text = document.createElement("p");
@@ -290,9 +281,6 @@
         }
     });
     function updateCount(storageId,elementId){
-        if(radioType == 2){
-            return;
-        }
         var count = localStorage.getItem(storageId);
         if(!count){
             count = 0;
