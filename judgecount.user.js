@@ -1,130 +1,149 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      2.0
+// @version      2.1
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*spxt/*
 // @match        https://dnf.qq.com/cp/*spxt/*
-// @icon         https://cdn.jsdelivr.net/gh/zhyonchen/script/logo.png
 // @updateURL    https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.meta.js
 // @downloadURL  https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.user.js
+// @icon         https://cdn.jsdelivr.net/gh/zhyonchen/script/logo.png
 // @grant        none
 // ==/UserScript==
 
 (function() {
     'use strict';
-    //------自定义按键列表开始------
-    // 更多特殊键值参考链接
-    // https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values
-    // 例如："`"代表键盘左上角波浪键以及" "代表键盘上的空格键
-    // 启用按键=true/禁用按键=false
-    const keyToggle = false;
-    // 显示键值=true/隐藏键值=false
-    const showKeyText = true;
-    // 重载按钮
-    const reloadKey = ["g"];
-    // 审核结果
-    const resultKeys = ["1", "2", "3"];
-    // 违规类型
-    const pkcPveKeys = [
-        "q", "w", "e", "r",
-        "a", "s", "d", "f",
-        "z", "x", "c", "v",
-        "Control", ""
-    ];
-    // 违规对象
-    const protagonistKeys = ["4", "5"];
-    // 按钮=["提交结果"]
-    const commitKey = ["Escape"];
-    // 按钮=["继续审判"]
-    const popKeys = ["`"];
-    //------自定义按键列表结束------
 
-    // 红色警示文：隐藏=true/显示=false
-    const hideContent = false;
+    const path = "https://cdn.jsdelivr.net/gh/zhyonchen/script";
+    const defaultSettingFile = "defaultSetting.json";
+    const myStyleFile = "myStyle.css";
 
-    // 视频静音播放：启用=true/禁用=false
-    const videoMuted = true;
-
-    // 放大单选框
-    let itemCSS = `
-        .item .list li input[type='radio']    {zoom: 1.5;-moz-transform: scale(1.5);}
-        .item .list li input[type='checkbox'] {zoom: 1.5;-moz-transform: scale(1.5);}
-        div {overflow: visible;}
-    `;
-
-    // 初始化脚本
     let keymap, parentElement;
-    let pkcPveTip = document.getElementById("pkcPveTip");
+    let logined = document.getElementById("logined");
     let popTeam = document.getElementById("popTeam");
+    let isLocked = false;
+
+    // 程序主入口
     InitScript();
 
     function InitScript() {
-        addGlobalStyle(itemCSS);
-        showRoleName();
-        createColumnLayout();
+        loadResource();
         listenKeyUp();
-    };
+        registerHook();
+        createSettingAnchor();
+        createSettingLayout();
+        createColumnLayout();
+    }
 
-    // 添加自定义样式表
-    function addGlobalStyle(css) {
-        var head, style;
+    async function loadResource() {
+        const defaultSettingFilePromise = await getStaticFile(defaultSettingFile, 'json');
+        const myStyleFilePromise = await getStaticFile(myStyleFile, 'text');
+        // 等待执行结果返回
+        let values = await Promise.all([defaultSettingFilePromise, myStyleFilePromise]);
+        if (values.length > 0) {
+            let defaultSetting = values[0];
+            let myStyle = values[1];
+            // 检查并更新本地配置
+            initAndUpdateSetting(defaultSetting);
+            // 注入自定义CSS
+            addGlobalStyle("myStyle", myStyle);
+        }
+        // 更新按键映射
+        updateKeymap(await getLocalSetting());
+    }
+
+    async function getStaticFile(filename, fileType) {
+        let url = path + '/' + filename;
+        let response = await fetch(url);
+        if (response.ok) {
+            let content;
+            switch (fileType) {
+                case 'json':
+                    content = await response.json();
+                    break;
+                case 'text':
+                    content = await response.text();
+                    break;
+            }
+            return content;
+        } else {
+            window.console.log(`HTTP error! status: ${response.status} fileType: ${filename}`);
+        }
+    }
+
+    function initAndUpdateSetting(defaultSetting) {
+        let setting = JSON.parse(localStorage.getItem("setting"));
+        if (!setting) {
+            if (!defaultSetting) {
+                alert("初始化配置失败，请刷新页面");
+                return;
+            }
+            localStorage.setItem("setting", JSON.stringify(defaultSetting));
+        } else if (defaultSetting && setting.fileVersion < defaultSetting.fileVersion) {
+            // 用本地配置替换默认配置
+            for (var key in defaultSetting) {
+                if (key == "fileVersion") {
+                    continue;
+                }
+                if (setting.key) {
+                    defaultSetting[key] = setting[key];
+                }
+            }
+            // 更新本地配置
+            localStorage.setItem("setting", JSON.stringify(defaultSetting));
+        }
+    }
+
+    function addGlobalStyle(id, css) {
+        let head, style;
         head = document.getElementsByTagName('head')[0];
-        if (!head) { return; }
+        if (!head || !css) { return; }
         style = document.createElement('style');
+        style.id = id;
         style.type = 'text/css';
         style.innerHTML = css;
         head.appendChild(style);
     }
 
-    // 捕获控制台信息
-    function showRoleName() {
-        var actualCode = '(' + function() {
-            var old_console_log = window.console.log;
-            window.console.log = function(msg) {
-                old_console_log(msg);
-                if (typeof(msg) == "object") {
-                    if (msg.hasOwnProperty("jData")) {
-                        // 记录审判入口
-                        var access_id = msg.jData.data.access_id;
-                        if (localStorage.getItem("access_id") != access_id) {
-                            localStorage.setItem("access_id", access_id);
-                        }
-                        // 标记PVE中的PKC
-                        var pattern_type = msg.jData.data.case_info.pattern_type_desc;
-                        if (localStorage.getItem("pattern_type") != pattern_type) {
-                            localStorage.setItem("pattern_type", pattern_type);
-                        }
-                        // 记录角色名
-                        localStorage.setItem("role_name", msg.jData.data.defendant_role_name);
-                    }
-                };
-            };
-        } + ')();';
-        var script = document.createElement('script');
-        script.textContent = actualCode;
-        (document.head || document.documentElement).appendChild(script);
-        script.remove();
+    // 键值映射
+    function updateKeymap(setting) {
+        keymap = {};
+        if (!setting || !setting.keyToggle.data) {
+            return;
+        }
+        for (let key in setting) {
+            if (key == "fileVersion") {
+                continue;
+            }
+            let item = setting[key];
+            if (item.type != "keycode") {
+                continue;
+            }
+
+            for (let i = 0; i < item.data.length; i++) {
+                keymap[item.data[i]] = {
+                    "parentID": item.parentID,
+                    "queryStr": item.queryStr,
+                    "index": i
+                }
+            }
+        }
+        if (Object.keys(keymap).length == 0) {
+            alert("按键功能失效，请刷新页面");
+        }
     }
 
     // 监听按键抬起
     function listenKeyUp() {
-        if (!keyToggle) {
-            return;
-        }
-        addKeymap(reloadKey, "video_container", "#reload");
-        addKeymap(resultKeys, "spsp1", "#result input[type='radio']");
-        addKeymap(pkcPveKeys, "spsp1", "#pkvPve input[type='checkbox']");
-        addKeymap(protagonistKeys, "spsp1", "#protagonist input[type='radio']");
-        addKeymap(commitKey, "spsp1", "#judgeCommit");
-        addKeymap(popKeys, "popTeam", "#judgeNext");
         document.addEventListener("keyup", function(e) {
-            // 未匹配按键
-            var key = keymap[e.key];
-            if (!key) {
+            if (!keymap) {
                 return;
             }
+            if (!keymap.hasOwnProperty(e.key)) {
+                return;
+            }
+            let key = keymap[e.key];
             // 获取当前父元素
             if (!parentElement || parentElement.id != key.parentID) {
                 parentElement = document.getElementById(key.parentID);
@@ -141,169 +160,295 @@
             var index = parseInt(key.index);
             items[index].click();
         });
-
     }
 
-    function addKeymap(keys, parentID, queryStr) {
-        if (!keymap) {
-            keymap = {};
+    async function getLocalSetting() {
+        // 尝试直接加载
+        let setting = JSON.parse(localStorage.getItem("setting"));
+        if (!setting) {
+            // 等待再次加载
+            await sleep(100);
+            setting = JSON.parse(localStorage.getItem("setting"));
         }
-        for (let i = 0; i < keys.length; i++) {
-            var key = keys[i];
-            if (key == "") {
+        return setting;
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function registerHook() {
+        window.addEventListener('load', function() {
+            let getJudgeCase = amsCfg_628988.fFlowSubmitEnd;
+            amsCfg_628988.fFlowSubmitEnd = function(res) {
+                getJudgeCase(res);
+                if (res.iRet == "0") {
+                    localStorage.setItem("data", JSON.stringify(res.jData.data));
+                    updateVideoLayout();
+                    updatePkcPveLayout();
+                }
+            };
+
+            let getJudgeResult = amsCfg_628989.fFlowSubmitEnd;
+            amsCfg_628989.fFlowSubmitEnd = function(res) {
+                let data = JSON.parse(localStorage.getItem("data"));
+                if (!data) {
+                    alert("计数失败");
+                } else if (data.access_id == "0_1_6") {
+                    if (data.case_info.pattern_type_desc == 443) {
+                        updateCount("pkcCount");
+                    } else {
+                        updateCount("pveCount");
+                    }
+                } else if (data.access_id == "0_1_5") {
+                    updateCount("pkcCount");
+                }
+                getJudgeResult(res);
+            };
+        });
+    }
+
+    function createSettingAnchor() {
+        let settingAnchor = document.createElement('a');
+        settingAnchor.href = "javascript:void(0);";
+        settingAnchor.textContent = "设置"
+        settingAnchor.addEventListener('click', onSettingAnchorClick);
+        logined.appendChild(settingAnchor);
+    }
+
+    function onSettingAnchorClick() {
+        let dialog = document.getElementById("settingLayout");
+        if (!dialog) {
+            alert("设置面板正在创建中……");
+            return;
+        }
+        if (typeof dialog.showModal != 'function') {
+            alert("The dialog API is not supported by this browser");
+            return;
+        }
+        if (!isLocked) {
+            isLocked = true;
+            getLocalSetting()
+                .then((setting) => {
+                    updateSettingForm(setting);
+                    if (dialog.querySelector('input')) {
+                        dialog.showModal();
+                    };
+                    isLocked = false;
+                })
+                .catch(e => alert(e));
+        } else {
+            alert("设置面板正在创建中……");
+        }
+    }
+
+    function createSettingLayout() {
+        // 对话框
+        let dialog = document.createElement("dialog");
+        dialog.id = "settingLayout";
+        dialog.addEventListener('cancel', clearSettingForm);
+        // 表单
+        let form = document.createElement('form');
+        form.id = "settingForm";
+        form.method = "dialog";
+        // 创建布局
+        dialog.appendChild(form);
+        logined.appendChild(dialog);
+    }
+
+    function updateSettingForm(setting) {
+        if (!setting) {
+            alert("加载配置失败，无法创建设置面板");
+            return;
+        }
+        let form = logined.querySelector('#settingForm');
+        if (!form) {
+            alert("页面已过期，请刷新页面");
+            return;
+        }
+        // 排序
+        let ul = document.createElement('ul');
+        for (var key in setting) {
+            if (key == "fileVersion") {
                 continue;
             }
-            keymap[key] = {
-                "parentID": parentID,
-                "queryStr": queryStr,
-                "index": i
+            let item = setting[key];
+            // 标题行
+            let title_li = document.createElement('li');
+            title_li.innerHTML = item.title;
+            ul.appendChild(title_li);
+            // 数据行
+            if (item.type == "toggle") {
+                let input = document.createElement('input');
+                input.name = key;
+                input.type = "checkbox";
+                if (item.data) {
+                    input.setAttribute('checked', "");
+                }
+                let data_li = document.createElement('li');
+                data_li.innerHTML = `<label class="switch">${input.outerHTML}<span class="slider"></span></label>`
+                ul.appendChild(data_li);
+            }
+            if (item.type == "keycode") {
+                let data_li = document.createElement('li');
+                for (let i = 0; i < item.data.length; i++) {
+                    if (i > 3 && i % 4 == 0) {
+                        //每隔4个input换行
+                        ul.appendChild(data_li);
+                        data_li = document.createElement('li');
+                    }
+                    let input = document.createElement('input');
+                    input.size = 4;
+                    input.name = key;
+                    input.value = item.data[i];
+                    input.style = "margin-left: 4px;";
+                    input.className = "tac";
+                    data_li.appendChild(input);
+                }
+                ul.appendChild(data_li);
             }
         }
+        // 按钮栏
+        let button_li = document.createElement('li');
+        button_li.className = "tac";
+        let div = document.createElement('div');
+        div.className = "tip-con";
+        div.appendChild(createFormButton("重设", onResetButtonClick));
+        div.appendChild(createFormButton("保存", onSaveButtonClick));
+        div.appendChild(createFormButton("取消", clearSettingForm));
+        button_li.appendChild(div);
+        ul.appendChild(button_li);
+        form.appendChild(ul);
     }
 
-    // 计数器分列布局
-    function createColumnLayout() {
-        // 标记继续审判按钮
-        var judgeNext = popTeam.querySelectorAll(".tac button")[1];
-        if (judgeNext) {
-            judgeNext.id = "judgeNext";
+    function createFormButton(text, event) {
+        let button = document.createElement('button');
+        button.textContent = text;
+        button.addEventListener('click', event);
+        return button;
+    }
+
+    function onResetButtonClick() {
+        let currentSetting = localStorage.getItem("setting");
+        localStorage.setItem("setting", null);
+        clearSettingForm();
+        loadResource().then(() => {
+            getLocalSetting().then((setting) => {
+                updateSettingForm(setting);
+                alert("重设成功，请重新保存");
+                logined.querySelector('#settingLayout').showModal();
+            });
+        }).catch((e) => {
+            localStorage.setItem("setting", currentSetting);
+            alert("重设失败,本地配置未发生改变");
+        })
+    }
+
+    async function onSaveButtonClick() {
+        let setting = await getLocalSetting();
+        if (!setting) {
+            alert("保存失败");
+            return;
         }
-        // 分列布局
-        var pveInput = createInput("pveCount", "pveInput", "margin-left: 1px;", 1);
-        var pkcInput = createInput("pkcCount", "pkcInput", "margin-left: 1px;", 1);
-        var button = document.createElement("button");
-        var btn_text = document.createTextNode("修改");
-        button.appendChild(btn_text);
-        button.addEventListener('click', function() {
-            var pveCount = parseInt(popTeam.querySelector("#pveInput").value);
-            var pkcCount = parseInt(popTeam.querySelector("#pkcInput").value);
-            if (isNaN(pveCount) || isNaN(pkcCount)) {
-                alert("请输入正确的数字");
-                return;
+        let form = document.getElementById('settingForm');
+        let inputs = form.querySelectorAll('input');
+        for (let i = 0; i < inputs.length; i++) {
+            let input = inputs[i];
+            let key = input.name;
+            if (setting.hasOwnProperty(key)) {
+                let item = setting[key];
+                let type = item.type;
+                if (type == "toggle") {
+                    item.data = input.checked;
+                    continue;
+                }
+                if (type == "keycode") {
+                    let lastInput = inputs[i - 1];
+                    if (lastInput && lastInput.name != input.name) {
+                        item.data = [];
+                    }
+                    item.data.push(input.value);
+                }
+                setting[key] = item;
             }
-            localStorage.setItem("pveCount", pveCount);
-            localStorage.setItem("pkcCount", pkcCount);
-            alert("修改成功");
-        });
-        //创建表格
-        var tbody = document.createElement('tbody');
-        //第一行
-        var row_1 = document.createElement('tr');
-        var row_1_1 = document.createElement('td');
-        row_1_1.appendChild(button);
-        var row_1_2 = document.createElement('td');
-        row_1_2.appendChild(pveInput);
-        var row_1_3 = document.createElement('td');
-        row_1_3.appendChild(pkcInput);
-        row_1.appendChild(row_1_1);
-        row_1.appendChild(row_1_2);
-        row_1.appendChild(row_1_3);
-        tbody.appendChild(row_1);
-        //第二行
-        var row_2 = document.createElement('tr');
-        var row_2_1 = document.createElement('th');
-        row_2_1.innerHTML = "";
-        var row_2_2 = document.createElement('th');
-        row_2_2.innerHTML = "PVE";
-        var row_2_3 = document.createElement('th');
-        row_2_3.innerHTML = "PKC";
-        row_2.appendChild(row_2_1);
-        row_2.appendChild(row_2_2);
-        row_2.appendChild(row_2_3);
-        tbody.appendChild(row_2);
-        //填充表格
-        var table = document.createElement('table');
-        table.style = "margin-left: 7px;";
-        table.appendChild(tbody);
-        popTeam.lastElementChild.appendChild(table);
+        }
+        localStorage.setItem("setting", JSON.stringify(setting));
+        updateKeymap(setting);
+        clearSettingForm();
+        updatePkcPveLayout();
+        alert("保存成功");
     }
 
-    function createInput(storageId, elementId, style, size) {
-        var input = document.createElement("input");
-        input.id = elementId;
-        input.className = "txc";
-        input.style = style;
-        input.value = localStorage.getItem(storageId) || 0;
-        input.size = size;
-        return input;
+    function clearSettingForm() {
+        document.getElementById('settingLayout').close();
+        document.getElementById('settingForm').innerHTML = ""
     }
 
-    // 审判视频分类层
-    const pkcPveTipOBS = new MutationObserver(function() {
-        // 显示视频进度条
-        var video = pkcPveTip.parentElement.firstElementChild;
-        video.firstElementChild.id = "video"
-        video.firstElementChild.controls = true;
+    // 更新视频层
+    function updateVideoLayout() {
+        let setting = JSON.parse(localStorage.getItem("setting"));
+        let video_container = document.getElementById("video_container");
+        let video = video_container.querySelector("video");
+        video.id = "video";
+        video.controls = true;
         // 禁止Safari全屏
-        video.firstElementChild.setAttribute("playsinline","");
+        video.setAttribute("playsinline", "");
         // 视频静音播放
-        video.firstElementChild.muted = videoMuted;
+        video.muted = setting.videoMuted.data;
         // 嵌入玩家角色名
-        video.insertBefore(createRoleNameText(), video.firstElementChild);
+        video_container.insertBefore(createRoleNameText(), video);
         // 视频重载按钮
-        video.appendChild(createReloadButton());
-        // 获取审核选项层
-        var pkcPveLayer = video.parentElement.lastElementChild;
-        // 隐藏红色警示文
-        if (hideContent) {
-            pkcPveLayer.previousElementSibling.style.display = "none";
+        video_container.appendChild(createReloadButton());
+    }
+
+    // 更新分类层
+    function updatePkcPveLayout() {
+        let setting = JSON.parse(localStorage.getItem("setting"));
+        let pkcPveLayer = document.getElementById("pkcPveLayer");
+        if (pkcPveLayer.children.length == 0) {
+            return;
         }
-        // 显示键值文本项
-        if (keyToggle && showKeyText) {
-            var keys = resultKeys.concat(pkcPveKeys, protagonistKeys);
-            var items = pkcPveLayer.querySelectorAll("li");
-            for (var i = 0; i < items.length; i++) {
-                var item = items[i];
-                var key = keys[i];
+        // 隐藏红色警告
+        let pkcPveTip = pkcPveLayer.previousElementSibling;
+        if (setting.hideWarn.data) {
+            pkcPveTip.style.display = "none";
+        } else {
+            pkcPveTip.style.display = "";
+        }
+        // 更新键值文本
+        let items = pkcPveLayer.querySelectorAll("li");
+        let keys = setting.resultKey.data.concat(setting.pkcPveKey.data, setting.protagonistKey.data);
+        for (let i = 0; i < items.length; i++) {
+            let item = items[i];
+            let span = item.querySelector(`span`);
+            let word = span.innerHTML.split(' ');
+            if (setting.keyToggle.data) {
+                let key = keys[i];
                 if (!key || key == "") {
                     continue;
                 }
-                var span = document.createElement("span");
-                span.appendChild(document.createTextNode(key));
-                item.appendChild(span);
+                span.innerHTML = word[0] + " " + key;
+            } else {
+                span.innerHTML = word[0];
             }
         }
-        // 折叠判定原因框
-        var itemText = pkcPveLayer.lastElementChild.previousElementSibling;
-        var summary = document.createElement("summary");
-        summary.className = "title";
-        summary.appendChild(document.createTextNode("判定原因"));
-        var details = document.createElement("details");
-        details.appendChild(summary);
-        details.appendChild(itemText.removeChild(itemText.lastElementChild));
-        itemText.removeChild(itemText.firstElementChild);
-        itemText.appendChild(details);
-        // 记录审查结果
-        var commitButton = pkcPveLayer.lastElementChild;
-        commitButton.addEventListener('click', function() {
-            var resultItem = document.getElementById("result");
-            var input = resultItem.querySelector("input[type='radio']:checked");
-            if (!input) {
-                return;
-            }
-            //  违规类型
-            var type = "";
-            switch (input.value) {
-                case "0":
-                    type = "无违规";
-                    break;
-                case "1":
-                    type = "违规";
-                    break;
-                case "2":
-                    type = "不确定";
-                    break;
-            }
-
-        });
-
-    });
+        // 折叠判定原因
+        let trailTextarea = pkcPveLayer.querySelector("#trailTextarea");
+        let defaultTextareaHTML = `<div class="title">判定原因</div>${trailTextarea.outerHTML}`;
+        let foldTextareaHTML = `<details><summary class="title">判定原因</summary>${trailTextarea.outerHTML}</details>`;
+        let itemText = pkcPveLayer.querySelector(".item.text");
+        if (setting.foldJudgeResult.data) {
+            itemText.innerHTML = foldTextareaHTML;
+        } else {
+            itemText.innerHTML = defaultTextareaHTML;
+        }
+    }
     // 角色名文本
     function createRoleNameText() {
         var text = document.createElement("p");
         text.className = "p2";
         text.style = "position:absolute;"
-        text.innerHTML = localStorage.getItem("role_name");
+        text.innerHTML = JSON.parse(localStorage.getItem("data")).defendant_role_name;
         return text;
     }
     // 重载按钮
@@ -317,36 +462,59 @@
         return div;
     }
 
-    // 审判成功弹出层
-    const popTeamOBS = new MutationObserver(function() {
-        if (popTeam.style.display != "block") {
-            return;
+    // 计数器分列布局
+    function createColumnLayout() {
+        // 标记继续审判按钮
+        let judgeNext = popTeam.querySelectorAll(".tac button")[1];
+        if (judgeNext) {
+            judgeNext.id = "judgeNext";
         }
-        var access_id = localStorage.getItem("access_id");
-        if (access_id == "0_1_5") {
-            updateCount("pkcCount", "pkcInput");
-        }
-        if (access_id == "0_1_6") {
-            var pattern_type = localStorage.getItem("pattern_type");
-            if (pattern_type == 443) {
-                updateCount("pkcCount", "pkcInput");
-                return;
-            }
-            updateCount("pveCount", "pveInput");
-        }
-    });
+        // 输入框
+        let pveInput = createPkcPveInput("pveCount");
+        let pkcInput = createPkcPveInput("pkcCount");
+        // 按钮
+        let updateButton = document.createElement("button");
+        updateButton.id = "updateButton";
+        updateButton.textContent = "修改"
+        // 表格
+        let table = document.createElement('table');
+        table.style = "margin-left: 7px;";
+        table.innerHTML = `<tr><td>${updateButton.outerHTML}</td><td>${pveInput.outerHTML}</td><td>${pkcInput.outerHTML}</td></tr><tr><th></th><th>PVE</th><th>PKC</th></tr>`;
+        table.querySelector('#updateButton').addEventListener('click', onUpdateButtonClick);
+        // 生成布局
+        popTeam.lastElementChild.appendChild(table);
+    }
 
-    function updateCount(storageId, elementId) {
-        var count = localStorage.getItem(storageId);
+    function createPkcPveInput(id) {
+        var input = document.createElement("input");
+        input.id = id;
+        input.className = "txc";
+        input.style = "margin-left: 1px;";
+        input.setAttribute('value', localStorage.getItem(id) || 0);
+        input.size = 1;
+        return input;
+    }
+
+    function updateCount(id) {
+        let count = localStorage.getItem(id);
         if (!count) {
             count = 0;
         }
         count = parseInt(count) + 1;
-        localStorage.setItem(storageId, count);
-        popTeam.querySelector("#" + elementId).value = count;
+        localStorage.setItem(id, count);
+        popTeam.querySelector("#" + id).value = count;
     }
-    // 派遣观察者
-    pkcPveTipOBS.observe(pkcPveTip, { childList: true });
-    popTeamOBS.observe(popTeam, { attributeFilter: ["style"] });
+
+    function onUpdateButtonClick() {
+        let pveCount = parseInt(popTeam.querySelector("#pveCount").value);
+        let pkcCount = parseInt(popTeam.querySelector("#pkcCount").value);
+        if (isNaN(pveCount) || isNaN(pkcCount)) {
+            alert("请输入正确的数字");
+            return;
+        }
+        localStorage.setItem("pveCount", pveCount);
+        localStorage.setItem("pkcCount", pkcCount);
+        alert("修改成功");
+    };
 
 })();

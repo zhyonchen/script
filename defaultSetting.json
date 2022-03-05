@@ -1,0 +1,81 @@
+ {
+     "fileVersion": 2.1,
+     "videoMuted":
+     {
+         "title": "视频静音",
+         "type": "toggle",
+         "data": true
+     },
+     "hideWarn":
+     {
+         "title": "隐藏警告",
+         "type": "toggle",
+         "data": false
+     },
+     "foldJudgeResult":
+     {
+        "title": "折叠原因",
+        "type": "toggle",
+        "data": true
+     },
+     "keyToggle":
+     {
+         "title": "按键开关",
+         "type": "toggle",
+         "data": false
+     },
+     "showKeyText":
+     {
+         "title": "显示键值",
+         "type": "toggle",
+         "data": false
+     },
+     "reloadKey":
+     {
+         "title": "重载视频",
+         "type": "keycode",
+         "parentID": "video_container",
+         "queryStr": "#reload",
+         "data": ["g"]
+     },
+     "resultKey":
+     {
+         "title": "违规结果",
+         "type": "keycode",
+         "parentID": "spsp1",
+         "queryStr": "#result input[type='radio']",
+         "data": ["1", "2", "3"]
+     },
+     "pkcPveKey":
+     {
+         "title": "违规类型",
+         "type": "keycode",
+         "parentID": "spsp1",
+         "queryStr": "#pkvPve input[type='checkbox']",
+         "data": ["q", "w", "e", "r", "a", "s", "d", "f", "z", "x", "c", "v", "Control", ""]
+     },
+     "protagonistKey":
+     {
+         "title": "违规对象",
+         "type": "keycode",
+         "parentID": "spsp1",
+         "queryStr": "#protagonist input[type='radio']",
+         "data": ["4", "5"]
+     },
+     "commitKey":
+     {
+         "title": "提交结果",
+         "type": "keycode",
+         "parentID": "spsp1",
+         "queryStr": "#judgeCommit",
+         "data": ["Escape"]
+     },
+     "popKey":
+     {
+         "title": "继续审判",
+         "parentID": "popTeam",
+         "queryStr": "#judgeNext",
+         "type": "keycode",
+         "data": ["`"]
+     }
+ }
