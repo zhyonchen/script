@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      1.8
+// @version      1.9
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*
@@ -44,9 +44,6 @@
     // 视频静音播放：启用=true/禁用=false
     const videoMuted = true;
 
-    // 计数布局：分列布局=true/合并布局=false
-    const splitColumn = false;
-
     // 放大单选框
     let itemCSS = `
         .item .list li input[type='radio']    {zoom: 1.5;-moz-transform: scale(1.5);}
@@ -63,12 +60,7 @@
         addGlobalStyle(itemCSS);
         showRoleName();
         listenKeyUp();
-        if(splitColumn){
-            createColumnLayout();
-        }
-        else{
-            createDefaultLayout();
-        }
+        createColumnLayout();
     };
 
     // 添加自定义样式表
@@ -88,12 +80,19 @@
             var old_console_log = window.console.log;
             window.console.log = function(msg){
                 old_console_log(msg);
-                if(typeof(msg)=="object"){
+                if(typeof(msg) == "object"){
                     if(msg.hasOwnProperty("jData")){
+                        // 记录审判入口
                         var access_id = msg.jData.data.access_id;
                         if(localStorage.getItem("access_id") != access_id){
                             localStorage.setItem("access_id",access_id);
                         }
+                        // 标记PVE中的PKC
+                        var pattern_type = msg.jData.data.case_info.pattern_type_desc;
+                        if(localStorage.getItem("pattern_type") != pattern_type){
+                            localStorage.setItem("pattern_type",pattern_type);
+                        }
+                        // 记录角色名
                         localStorage.setItem("role_name",msg.jData.data.defendant_role_name);
                     }
                 };
@@ -156,35 +155,12 @@
         }
     }
 
-    // 计数器默认布局
-    function createDefaultLayout(){
-        var div = document.createElement("div");
-        var totalInput = createInput("totalCount","totalInput","margin-left: 20px;",5);
-        var button = document.createElement("button");
-        var btn_text = document.createTextNode("修改");
-        button.style = "margin-left: 10px;";
-        button.appendChild(btn_text);
-        button.addEventListener('click',function(){
-            var totalCount = parseInt(popTeam.querySelector("#totalInput").value);
-            if(isNaN(totalCount)){
-                alert("请输入正确的数字");
-                return;
-            }
-            localStorage.setItem("totalCount",totalCount);
-            alert("修改成功");
-        });
-        div.appendChild(totalInput);
-        div.appendChild(button);
-        popTeam.lastElementChild.appendChild(div);
-    }
     // 计数器分列布局
     function createColumnLayout(){
-        var div = document.createElement("div");
-        var pveInput = createInput("pveCount","pveInput","margin-left: 5px;",1);
-        var pkcInput = createInput("pkcCount","pkcInput","margin-left: 5px;",1);
+        var pveInput = createInput("pveCount","pveInput","margin-left: 1px;",1);
+        var pkcInput = createInput("pkcCount","pkcInput","margin-left: 1px;",1);
         var button = document.createElement("button");
         var btn_text = document.createTextNode("修改");
-        button.style = "margin-left: 10px;";
         button.appendChild(btn_text);
         button.addEventListener('click',function(){
             var pveCount = parseInt(popTeam.querySelector("#pveInput").value);
@@ -197,11 +173,39 @@
             localStorage.setItem("pkcCount",pkcCount);
             alert("修改成功");
         });
-        div.appendChild(pveInput);
-        div.appendChild(pkcInput);
-        div.appendChild(button);
-        popTeam.lastElementChild.appendChild(div);
+        //创建表格
+        var tbody = document.createElement('tbody');
+        //第一行
+        var row_1 = document.createElement('tr');
+        var row_1_1 = document.createElement('td');
+        row_1_1.appendChild(button);
+        var row_1_2 = document.createElement('td');
+        row_1_2.appendChild(pveInput);
+        var row_1_3 = document.createElement('td');
+        row_1_3.appendChild(pkcInput);
+        row_1.appendChild(row_1_1);
+        row_1.appendChild(row_1_2);
+        row_1.appendChild(row_1_3);
+        tbody.appendChild(row_1);
+        //第二行
+        var row_2 = document.createElement('tr');
+        var row_2_1 = document.createElement('th');
+        row_2_1.innerHTML = "";
+        var row_2_2 = document.createElement('th');
+        row_2_2.innerHTML = "PVE";
+        var row_2_3 = document.createElement('th');
+        row_2_3.innerHTML = "PKC";
+        row_2.appendChild(row_2_1);
+        row_2.appendChild(row_2_2);
+        row_2.appendChild(row_2_3);
+        tbody.appendChild(row_2);
+        //填充表格
+        var table = document.createElement('table');
+        table.style = "margin-left: 7px;";
+        table.appendChild(tbody);
+        popTeam.lastElementChild.appendChild(table);
     }
+
     function createInput(storageId,elementId,style,size){
         var input = document.createElement("input");
         input.id = elementId;
@@ -267,17 +271,17 @@
         if(popTeam.style.display != "block"){
             return;
         }
-        if(splitColumn){
-            var access_id = localStorage.getItem("access_id");
-            if(access_id == "0_1_5"){
-                updateCount("pkcCount","pkcInput");
-            }
-            if(access_id == "0_1_6"){
-                updateCount("pveCount","pveInput");
-            }
+        var access_id = localStorage.getItem("access_id");
+        if(access_id == "0_1_5"){
+            updateCount("pkcCount","pkcInput");
         }
-        else{
-            updateCount("totalCount","totalInput");
+        if(access_id == "0_1_6"){
+            var pattern_type = localStorage.getItem("pattern_type");
+            if( pattern_type == 443 ){
+                updateCount("pkcCount","pkcInput");
+                return;
+            }
+            updateCount("pveCount","pveInput");
         }
     });
     function updateCount(storageId,elementId){
