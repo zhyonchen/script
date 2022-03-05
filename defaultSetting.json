@@ -1,10 +1,10 @@
  {
-     "fileVersion": 2.1,
-     "videoMuted":
-     {
-         "title": "视频静音",
+     "fileVersion": 2.2,
+     "oldPlayer":
+     {  
+         "title": "老播放器",
          "type": "toggle",
-         "data": true
+         "data": false
      },
      "hideWarn":
      {
@@ -34,7 +34,7 @@
      {
          "title": "重载视频",
          "type": "keycode",
-         "parentID": "video_container",
+         "parentID": "spsp1",
          "queryStr": "#reload",
          "data": ["g"]
      },
