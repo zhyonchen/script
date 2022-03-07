@@ -12,8 +12,8 @@ dialog::backdrop {
 .switch {
   position: relative;
   display: inline-block;
-  width: 45px;
-  height: 20px;
+  width: 42px;
+  height: 16px;
 }
 
 .switch input { 
@@ -37,8 +37,8 @@ dialog::backdrop {
 .slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 12px;
+  width: 12px;
   left: 2px;
   bottom: 2px;
   background-color: white;

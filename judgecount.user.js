@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      2.2
+// @version      2.3
 // @description  内嵌于审判成功提示框的本地计数器
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*spxt/*
@@ -15,6 +15,7 @@
 (function() {
     'use strict';
 
+    const keyDoc = "https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values";
     const path = "https://cdn.jsdelivr.net/gh/zhyonchen/script/";
     const defaultSettingFile = "defaultSetting.json";
     const myStyleFile = "myStyle.css";
@@ -23,7 +24,7 @@
     let keymap, parentElement;
     let logined = document.getElementById("logined");
     let popTeam = document.getElementById("popTeam");
-
+    let spsp1 = document.getElementById('spsp1');
     // 程序主入口
     InitScript();
 
@@ -40,16 +41,16 @@
         const defaultSettingFilePromise = getStaticFile(defaultSettingFile, 'json');
         const myStyleFilePromise = getStaticFile(myStyleFile, 'text');
         let values = await Promise.all([defaultSettingFilePromise, myStyleFilePromise]);
-        if (values.length > 0) {
-            let defaultSetting = values[0];
-            let myStyle = values[1];
-            // 检查并更新本地配置
-            initAndUpdateSetting(defaultSetting);
-            // 注入自定义CSS
+        if (values[0]) {
+            initAndUpdateSetting(values[0]);
+        }
+        if (values[1]) {
+            addGlobalStyle("myStyle", values[1]);
+        } else {
+            const myStyle = 'div {overflow: visible;}';
             addGlobalStyle("myStyle", myStyle);
         }
     }
-
     async function getStaticFile(filename, fileType) {
         let url = path + filename;
         let response = await fetch(url, { cache: "no-cache" });
@@ -119,18 +120,17 @@
         let oldSetting = localStorage.setting;
         localStorage.setting = JSON.stringify(newSetting);
         updateKeymap();
-        let spsp1 = document.getElementById('spsp1');
         if (spsp1.style.display == 'none') {
             return;
         }
-        if(!oldSetting){
+        if (!oldSetting) {
             return;
         }
         oldSetting = JSON.parse(oldSetting);
-        if (oldSetting.oldPlayer&&oldSetting.oldPlayer.data == newSetting.oldPlayer.data) {
+        if (oldSetting.oldPlayer && oldSetting.oldPlayer.data == newSetting.oldPlayer.data) {
             updatePkcPveLayout();
             return;
-        } 
+        }
         continueJudge();
     }
 
@@ -193,40 +193,51 @@
     }
 
     function registerHook() {
-        window.addEventListener('load', () => {
-            let getJudgeCase = amsCfg_628988.fFlowSubmitEnd;
-            amsCfg_628988.fFlowSubmitEnd = function(res) {
-                getLocalSetting().then((setting) => {
-                    if (res.iRet == 0) {
-                        localStorage.data = JSON.stringify(res.jData.data);
-                        if (setting && setting.oldPlayer && setting.oldPlayer.data) {
-                            res.jData.data.play_type = 0;
-                        }
+        let getJudgeCase, getJudgeResult;
+        try {
+            getJudgeCase = amsCfg_628988.fFlowSubmitEnd;
+            getJudgeResult = amsCfg_628989.fFlowSubmitEnd;
+        } catch (e) {
+            window.console.log(e);
+            sleep(100).then(() => registerHook());
+            return;
+        }
+        amsCfg_628988.fFlowSubmitEnd = function(res) {
+            getLocalSetting().then((setting) => {
+                if (res.iRet == 0) {
+                    localStorage.data = JSON.stringify(res.jData.data);
+                    if (setting && setting.oldPlayer && setting.oldPlayer.data) {
+                        res.jData.data.play_type = 0;
                     }
-                    getJudgeCase(res);
-                    if (res.iRet == 0) {
-                        if (setting && setting.oldPlayer && setting.oldPlayer.data) {
-                            updateOldPlayerLayout();
-                        } else {
-                            updateTCPlayerLayout();
-                        }
-                        updatePkcPveLayout();
-                    }
-                });
-            };
-            let getJudgeResult = amsCfg_628989.fFlowSubmitEnd;
-            amsCfg_628989.fFlowSubmitEnd = function(res) {
-                let data = JSON.parse(localStorage.data);
-                if (!data) {
-                    alert("计数失败");
-                } else if (data.access_id == "0_0_2") {
-                    updateCount("pveCount");
-                } else if (data.access_id == "0_0_1") {
-                    updateCount("pkcCount");
                 }
-                getJudgeResult(res);
-            };
-        }, { once: true });
+                getJudgeCase(res);
+                if (res.iRet == 0) {
+                    if (setting && setting.oldPlayer && setting.oldPlayer.data) {
+                        updateOldPlayerLayout();
+                    } else {
+                        updateTCPlayerLayout();
+                    }
+                    updatePkcPveLayout();
+                }
+            });
+        };
+        amsCfg_628989.fFlowSubmitEnd = function(res) {
+            let data = JSON.parse(localStorage.data);
+            if (!data) {
+                alert("计数失败");
+            } else if (data.access_id == "0_0_2") {
+                let slider = spsp1.querySelector("#isPKC");
+                if (!slider || !slider.checked) {
+                    updateCount("pveCount");
+                } else {
+                    updateCount("pkcCount");
+                    slider.checked = false;
+                }
+            } else if (data.access_id == "0_0_1") {
+                updateCount("pkcCount");
+            }
+            getJudgeResult(res);
+        };
     }
 
     function createAnchor() {
@@ -337,6 +348,13 @@
                 ul.appendChild(data_li);
             }
         }
+        // 更多键值
+        let anchor = document.createElement('a');
+        anchor.href = keyDoc;
+        anchor.target = "_blank";
+        anchor.rel = "noopener";
+        anchor.textContent = "更多键值";
+        ul.appendChild(anchor);
         // 按钮栏
         let button_li = document.createElement('li');
         button_li.className = "tac";
@@ -417,7 +435,7 @@
 
     // 更新老播放器
     async function updateOldPlayerLayout() {
-        let video_container = document.getElementById("video_container");
+        let video_container = spsp1.querySelector("#video_container");
         let video = video_container.querySelector("video");
         video.id = "oldPlayer";
         video.controls = true;
@@ -427,40 +445,67 @@
         video.muted = true;
         // 嵌入玩家角色名
         video_container.insertBefore(createRoleNameText(), video);
-        video_container.appendChild(createReloadText());
+        video_container.appendChild(createVideoSpan());
     }
     // 更新TC播放器
     async function updateTCPlayerLayout() {
-        let video_container = document.getElementById("cloud_video_container");
+        let video_container = spsp1.querySelector("#cloud_video_container");
         let textArray = video_container.querySelectorAll('.p2');
         if (textArray.length == 0) {
             let player = video_container.querySelector("#cloud-player");
             player.appendChild(createRoleNameText());
-            video_container.appendChild(createReloadText());
+            video_container.appendChild(createVideoSpan());
+            let span = video_container.querySelector('.vjs-menu-item-text');
+            span.addEventListener('click', copyVideoUrl);
             return;
         }
-        let roleName = JSON.parse(localStorage.getItem("data")).defendant_role_name;
+        let roleName = getRoleName();
         for (let text of textArray) {
             text.innerHTML = roleName;
         }
     }
 
-    // 角色名文本
+    // 获取角色名
+    function getRoleName() {
+        let data = localStorage.data;
+        if (data) {
+            data = JSON.parse(data);
+            return data.defendant_role_name;
+        }
+        return "";
+    }
+
     function createRoleNameText() {
-        var text = document.createElement("p");
-        text.className = "p2";
-        text.style = "position:absolute;"
-        text.innerHTML = JSON.parse(localStorage.getItem("data")).defendant_role_name;
-        return text;
+        let span = document.createElement("span");
+        span.className = "p2";
+        span.style = "position:absolute;"
+        span.innerHTML = getRoleName();
+        return span;
+    }
+
+    function createVideoSpan() {
+        let p = document.createElement('p');
+        let button = createReloadButton();
+        p.appendChild(button);
+        let data = localStorage.data;
+        if (data) {
+            data = JSON.parse(data);
+            if (data.access_id == "0_0_2") {
+                let slider = createPkcSlider();
+                p.appendChild(slider);
+            }
+        }
+        return p;
     }
 
     // 重载视频
-    function createReloadText() {
-        let text = createRoleNameText();
-        text.id = "reload";
-        text.addEventListener('click', () => {
-            let tcPlayer = document.getElementById("cloud-player_html5_api");
-            let oldPlayer = document.getElementById("oldPlayer");
+    function createReloadButton() {
+        let button = createRoleNameText();
+        button.id = "reload";
+        button.style = '';
+        button.addEventListener('click', () => {
+            let tcPlayer = spsp1.querySelector("#cloud-player_html5_api");
+            let oldPlayer = spsp1.querySelector("#oldPlayer");
             if (tcPlayer) {
                 tcPlayer.load();
             }
@@ -468,7 +513,41 @@
                 oldPlayer.load();
             }
         })
-        return text;
+        return button;
+    }
+
+    // PKC滑块
+    function createPkcSlider() {
+        let label = document.createElement('label');
+        label.className = 'switch';
+        label.style.float = 'right';
+        let input = document.createElement('input');
+        input.id = 'isPKC';
+        input.type = 'radio';
+        input.addEventListener('change', function(e) {
+            input.addEventListener('click', () => {
+                e.target.checked = !e.target.checked;
+            }, { once: true });
+        })
+        let span = document.createElement('span');
+        span.className = 'slider';
+        label.appendChild(input);
+        label.appendChild(span);
+        return label;
+    }
+
+    async function copyVideoUrl() {
+        const clipboard = navigator.clipboard;
+        if (!clipboard) {
+            alert("The clipboard API is not supported by this browser");
+            return;
+        }
+        let data = localStorage.data;
+        if (data) {
+            data = JSON.parse(data);
+            await clipboard.writeText(data.video_url);
+            alert("复制视频链接成功");
+        }
     }
 
     // 更新审判分类面板
@@ -515,6 +594,22 @@
         } else {
             itemText.innerHTML = defaultTextareaHTML;
         }
+        // 记录倍速
+        let commitButton = pkcPveLayer.querySelector("#judgeCommit");
+        commitButton.addEventListener('click', changeDefaultRate);
+    }
+
+    // 改变默认倍速
+    function changeDefaultRate() {
+        let rate = spsp1.querySelector('.vjs-playback-rate-value');
+        if (!rate) {
+            return;
+        }
+        if (!cloudPlayer || typeof cloudPlayer.defaultPlaybackRate != 'function') {
+            return;
+        }
+        let str = rate.innerHTML.split('x');
+        cloudPlayer.defaultPlaybackRate(str[0]);
     }
 
     // 计数器分列布局
