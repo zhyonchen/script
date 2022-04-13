@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      2.3
-// @description  内嵌于审判成功提示框的本地计数器
+// @version      2.4
+// @description  多功能计数
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*spxt/*
 // @match        https://dnf.qq.com/cp/*spxt/*
@@ -15,11 +15,13 @@
 (function() {
     'use strict';
 
-    const keyDoc = "https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values";
-    const path = "https://cdn.jsdelivr.net/gh/zhyonchen/script/";
+    const keyDocument = "https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values";
+    const database = "https://data.silksong.site:8000/";
+    const staticFilePath = "https://cdn.jsdelivr.net/gh/zhyonchen/script/";
     const defaultSettingFile = "defaultSetting.json";
     const myStyleFile = "myStyle.css";
-    const anchorJson = { "setting": "设置" };
+    const anchorJson = { "setting": "设置", "score": "分数" };
+    const staticFileOption = { cache: "no-cache" };
 
     let keymap, parentElement;
     let logined = document.getElementById("logined");
@@ -38,8 +40,8 @@
     }
 
     async function loadResource() {
-        const defaultSettingFilePromise = getStaticFile(defaultSettingFile, 'json');
-        const myStyleFilePromise = getStaticFile(myStyleFile, 'text');
+        const defaultSettingFilePromise = fetchData(staticFilePath + defaultSettingFile, staticFileOption, 'json');
+        const myStyleFilePromise = fetchData(staticFilePath + myStyleFile, staticFileOption, 'text');
         let values = await Promise.all([defaultSettingFilePromise, myStyleFilePromise]);
         if (values[0]) {
             initAndUpdateSetting(values[0]);
@@ -47,27 +49,35 @@
         if (values[1]) {
             addGlobalStyle("myStyle", values[1]);
         } else {
-            const myStyle = 'div {overflow: visible;}';
+            const myStyle = `div {overflow: visible;}
+            .closeButton {position:absolute;top:0;right:0;border:none;}`;
             addGlobalStyle("myStyle", myStyle);
         }
     }
-    async function getStaticFile(filename, fileType) {
-        let url = path + filename;
-        let response = await fetch(url, { cache: "no-cache" });
-        if (response.ok) {
-            let content;
-            switch (fileType) {
-                case 'json':
-                    content = await response.json();
-                    break;
-                case 'text':
-                    content = await response.text();
-                    break;
+    async function fetchData(url, option = {}, type = 'text') {
+        callMaskDialog(true);
+        let content;
+        try {
+            let response = await fetch(url, option);
+            if (response.ok) {
+                switch (type) {
+                    case 'json':
+                        content = await response.json();
+                        break;
+                    case 'text':
+                        content = await response.text();
+                        break;
+                }
+            } else {
+                alert(`${response.status}：${await response.text()}`);
+                content = null;
             }
-            return content;
-        } else {
-            window.console.error(`HTTP error! status: ${response.status} file: ${filename}`);
+        } catch (e) {
+            window.console.error(`${e}：Fail to fetch ${url}`);
+            content = null;
         }
+        callMaskDialog(false);
+        return content;
     }
 
     function initAndUpdateSetting(defaultSetting) {
@@ -198,7 +208,6 @@
             getJudgeCase = amsCfg_628988.fFlowSubmitEnd;
             getJudgeResult = amsCfg_628989.fFlowSubmitEnd;
         } catch (e) {
-            window.console.log(e);
             sleep(100).then(() => registerHook());
             return;
         }
@@ -254,10 +263,13 @@
     async function callDialog(e) {
         let dialog = logined.querySelector('dialog');
         if (!dialog) {
-            let form = document.createElement('form');
-            form.method = 'dialog';
+            let closeButton = createFormButton("X", clearForm);
+            closeButton.className = "closeButton";
+            let div = document.createElement('div');
+            div.name = 'form';
             dialog = document.createElement('dialog');
-            dialog.appendChild(form);
+            dialog.appendChild(closeButton);
+            dialog.appendChild(div);
             logined.appendChild(dialog);
             dialog.addEventListener('cancel', clearForm);
         }
@@ -266,30 +278,40 @@
             return;
         }
         let text = e.target.textContent;
-        let form = dialog.querySelector('form');
-        callMaskDialog(true);
+        let div = dialog.querySelector('div');
         switch (text) {
             case "设置":
-                await updateSettingForm(form);
+                await updateSettingForm(div);
+                break;
+            case "分数":
+                await updateVerifyForm(div);
                 break;
         }
-        callMaskDialog(false);
-        if (form.innerHTML == "") {
+        if (div.innerHTML == "") {
             alert("面板创建失败，请重试");
             return;
         }
+        dialog.style.display = "block";
         dialog.showModal();
     }
 
     function clearForm() {
         let dialog = logined.querySelector('dialog');
-        dialog.querySelector('form').innerHTML = "";
+        if (!dialog) {
+            return;
+        }
+        dialog.style.display = "none";
+        dialog.querySelector('div').innerHTML = "";
         dialog.close();
     }
 
     function callMaskDialog(toggle) {
+        let dialog = logined.querySelector('dialog')
         let popupMsg = document.getElementById("_PopupMsg_");
         let overlay = document.getElementById("_overlay_");
+        if (dialog) {
+            dialog.style.display = toggle ? "none" : "block";
+        }
         if (popupMsg) {
             popupMsg.style.display = toggle ? "block" : "none";
         }
@@ -319,14 +341,14 @@
             ul.appendChild(title_li);
             // 数据行
             if (item.type == "toggle") {
-                let input = document.createElement('input');
+                let label = createCheckbox();
+                let input = label.querySelector('input');
                 input.name = key;
-                input.type = "checkbox";
                 if (item.data) {
                     input.setAttribute('checked', "");
                 }
                 let data_li = document.createElement('li');
-                data_li.innerHTML = `<label class="switch">${input.outerHTML}<span class="slider"></span></label>`
+                data_li.appendChild(label);
                 ul.appendChild(data_li);
             }
             if (item.type == "keycode") {
@@ -341,8 +363,6 @@
                     input.size = 4;
                     input.name = key;
                     input.value = item.data[i];
-                    input.style = "margin-left: 4px;";
-                    input.className = "tac";
                     data_li.appendChild(input);
                 }
                 ul.appendChild(data_li);
@@ -350,7 +370,7 @@
         }
         // 更多键值
         let anchor = document.createElement('a');
-        anchor.href = keyDoc;
+        anchor.href = keyDocument;
         anchor.target = "_blank";
         anchor.rel = "noopener";
         anchor.textContent = "更多键值";
@@ -358,14 +378,23 @@
         // 按钮栏
         let button_li = document.createElement('li');
         button_li.className = "tac";
-        let div = document.createElement('div');
-        div.className = "tip-con";
-        div.appendChild(createFormButton("重设", onResetButtonClick));
-        div.appendChild(createFormButton("保存", onSaveButtonClick));
-        div.appendChild(createFormButton("取消", clearForm));
-        button_li.appendChild(div);
+        button_li.appendChild(createFormButton("重设", onResetButtonClick));
+        button_li.appendChild(createFormButton("保存", onSaveButtonClick));
+        button_li.appendChild(createFormButton("取消", clearForm));
         ul.appendChild(button_li);
         form.appendChild(ul);
+    }
+
+    function createCheckbox() {
+        let label = document.createElement('label');
+        label.className = "switch";
+        let input = document.createElement('input');
+        input.type = "checkbox";
+        let span = document.createElement('span');
+        span.className = "slider";
+        label.appendChild(input);
+        label.appendChild(span);
+        return label;
     }
 
     function createFormButton(text, event) {
@@ -380,12 +409,12 @@
         localStorage.removeItem("setting");
         await loadResource();
         if (!localStorage.setting) {
-            alert("重设失败，还原先前配置");
+            alert("重设失败，本地配置保持不变");
             localStorage.setting = oldSetting;
-            logined.querySelector("#setting").click();
         } else {
             alert("重设成功,已初始化本地配置");
             clearForm();
+            logined.querySelector("#setting").click();
         }
     }
 
@@ -395,12 +424,8 @@
             alert("保存失败");
             return;
         }
-        let form = getParentByTag(e.target, 'FORM');
-        if (!form) {
-            alert("保存失败");
-            return;
-        }
-        let inputs = form.querySelectorAll('input');
+        let dialog = getParentByTag(e.target, 'DIALOG');
+        let inputs = dialog.querySelectorAll('input');
         for (let i = 0; i < inputs.length; i++) {
             let input = inputs[i];
             let key = input.name;
@@ -409,7 +434,7 @@
                 let type = item.type;
                 if (type == "toggle") {
                     item.data = input.checked;
-                    continue;
+                    window.console.log(item.data);
                 }
                 if (type == "keycode") {
                     let lastInput = inputs[i - 1];
@@ -429,8 +454,261 @@
     function getParentByTag(element, tag) {
         while (element && element.tagName != tag) {
             element = element.parentElement;
+            if (element.tagName == 'BODY') {
+                return null;
+            }
         }
         return element;
+    }
+
+    async function updateVerifyForm(form) {
+        if (!form) {
+            return;
+        }
+        let token = localStorage.token || "";
+        if (token == "") {
+            setTimeout(e => alert("初次使用请输入任意字符的验证码并牢记然后点击查询"), 100);
+        }
+        form.innerHTML = `<table><tbody><tr><td>验证码</td><td><input type='text' size=6 value=${token}></input></td></tr></tbody></table>`
+        let div = document.createElement('div');
+        div.className = "tac tip-con ";
+        div.style.padding = "0px";
+        div.appendChild(createFormButton("修改", onRecodeButtonClick));
+        div.appendChild(createFormButton("查询", onQueryButtonClick));
+        div.appendChild(createFormButton("取消", clearForm));
+        form.appendChild(div);
+    }
+
+    async function postJSON(type, code, localData) {
+        let body = {
+            "type": type,
+            "uuid": LoginManager.getUserUin(),
+            "code": code,
+            "data": localData
+        }
+        let option = {
+            method: 'POST',
+            headers: {
+                'Accept': 'text/plain,application/json',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        }
+        if (type == "recode") {
+            return await fetchData(database, option);
+        }
+        return await fetchData(database, option, 'json');
+    }
+
+    async function onRecodeButtonClick(e) {
+        let dialog = getParentByTag(e.target, 'DIALOG');
+        let tbody = dialog.querySelector('tbody');
+        let inputs = tbody.querySelectorAll('input');
+        if (inputs.length == 1) {
+            tbody.innerHTML += `<tr><td>新验证码</td><td><input type='text' size=6></input></td></tr>`;
+            alert("请输入新验证码并确认修改");
+            return;
+        }
+        if (!inputs[0].value || !inputs[1].value) {
+            alert("验证码或新验证码不能为空");
+            return;
+        }
+        let data = await postJSON("recode", inputs[0].value, inputs[1].value);
+        if (!data) {
+            return;
+        }
+        alert(data);
+        localStorage.token = inputs[0].value = inputs[1].value;
+        getParentByTag(inputs[1], 'TR').remove();
+    }
+
+    async function onQueryButtonClick(e) {
+        let dialog = getParentByTag(e.target, 'DIALOG');
+        let form = dialog.querySelector('div');
+        let input = form.querySelector('input');
+        if (!input.value) {
+            alert("验证码不能为空");
+            return;
+        }
+        let data = await postJSON("query", input.value, {});
+        window.console.log(data);
+        if (!data) {
+            return;
+        }
+        localStorage.token = input.value;
+        updateScroeForm(data);
+    }
+
+    function updateScroeForm(data) {
+        let dialog = logined.querySelector('dialog');
+        let form = logined.querySelector('div');
+        let thead = "<table><thead><th></th></th><th>日期</th><th>PVE</th><th>PKC</th><th>分数</th><th>指令</th></thead>";
+        let tbody = `<tbody></tbody>`;
+        let tfoot = `<tfoot><tr><td>总计</td><td name=day>0</td><td name=pve>0</td><td name=pkc>0</td><td name=score>0</td><td name=cmd></td><tr></tfoot></table>`
+        form.innerHTML = thead + tbody + tfoot;
+        let date = new Date();
+        let today = (date.getMonth() + 1) * 100 + date.getDate();
+        let localData = {};
+        localData[today] = { "PVE": localStorage.pveCount, "PKC": localStorage.pkcCount };
+        let tbodyElement = form.querySelector('tbody');
+        createScoreItem(tbodyElement, "本地", localData);
+        let total = createScoreItem(tbodyElement, "远程", data);
+        let tfootElement = form.querySelector('tfoot');
+        for (let key in total) {
+            let item = tfootElement.querySelector(`td[name=${key}]`);
+            if (item) {
+                item.innerHTML = total[key];
+            }
+        }
+        let cmd = tfootElement.querySelector("td[name='cmd']");
+        cmd.appendChild(createFormButton("修改", onCoverButtonClick));
+        cmd.appendChild(createFormButton("删除", onRemoveButtonClick));
+    }
+
+    function calculateScore(pve, pkc) {
+        let score = 0;
+        // 计算超出200的分数
+        let extra = pve + pkc - 200;
+        if (extra > 0) {
+            if (extra > 100) {
+                extra = 100;
+            }
+            score += extra * 0.5;
+            score += 200;
+        } else {
+            score = pve + pkc;
+        }
+        // 计数pkc的额外分数
+        score += pkc > 50 ? 50 : pkc;
+        // 超出归位
+        return score > 300 ? 300 : score;
+    }
+
+    function createScoreItem(tbody, text, data) {
+        let totalDay = Object.keys(data).length;
+        let totalPVE = 0,
+            totalPKC = 0,
+            totalScore = 0;
+        for (var key in data) {
+            let today = key;
+            let count = data[key];
+            let pveCount = parseInt(count["PVE"]);
+            let pkcCount = parseInt(count["PKC"]);
+            let score = calculateScore(pveCount, pkcCount);
+            totalPVE += pveCount;
+            totalPKC += pkcCount;
+            totalScore += score;
+            let tr = document.createElement('tr');
+            tr.innerHTML = `
+            <td>${text}</td>
+            <td name="today">${today}</td>
+            <td>${createPkcPveInput("pveCount",pveCount).outerHTML}</td>
+            <td>${createPkcPveInput("pkcCount",pkcCount).outerHTML}</td>
+            <td name="score">${score}</td>
+            <td></td>`
+            let td = tr.lastElementChild;
+            if (text == "本地") {
+                td.appendChild(createFormButton("修改", onUpdateButtonClick));
+                td.appendChild(createFormButton("上传", onUploadButtonClick));
+            } else {
+                td.appendChild(createCheckbox());
+            }
+            tbody.appendChild(tr);
+        }
+        return { "day": totalDay, "pve": totalPVE, "pkc": totalPKC, "score": totalScore };
+    }
+
+    async function onUploadButtonClick(e) {
+        let td = e.target.parentElement;
+        let tr = td.parentElement;
+        let today, pveCount, pkcCount;
+        try {
+            let date = new Date();
+            today = (date.getMonth() + 1) * 100 + date.getDate();
+            pveCount = parseInt(tr.querySelector("input[name='pveCount']").value);
+            pkcCount = parseInt(tr.querySelector("input[name='pkcCount']").value);
+            if (isNaN(pveCount) || isNaN(pkcCount)) {
+                throw new error("请输入正确的数字");
+            }
+        } catch (e) {
+            alert(e);
+            return;
+        }
+        if (!localStorage.token) {
+            alert("上传失败,请通过分数查询设置验证码");
+            return;
+        }
+        let localData = {};
+        localData[today] = { "PVE": pveCount, "PKC": pkcCount };
+        let data = await postJSON("upload", localStorage.token, localData);
+        if (!data) {
+            return;
+        }
+        localStorage.pveCount = 0;
+        localStorage.pkcCount = 0;
+        updatePopForm();
+        let score = tr.querySelector("td[name='score']");
+        if (score) {
+            updateScroeForm(data);
+        } else {
+            clearForm();
+            alert("上传成功");
+        }
+    }
+
+    async function onCoverButtonClick(e) {
+        let tfoot = getParentByTag(e.target, 'TFOOT');
+        let tbody = tfoot.previousElementSibling;
+        let checkbox = tbody.querySelectorAll('input:checked');
+        if (checkbox && checkbox.length == 0) {
+            alert("请勾选需要变更的远程指令");
+            return;
+        }
+        let localData = {};
+        for (let input of checkbox) {
+            let tr = getParentByTag(input, 'TR');
+            let today = tr.querySelector("td[name='today']");
+            let pveCount = tr.querySelector("input[name='pveCount']");
+            let pkcCount = tr.querySelector("input[name='pkcCount']");
+            if (!today || !pveCount || !pkcCount) {
+                continue;
+            }
+            pveCount = parseInt(pveCount.value);
+            pkcCount = parseInt(pkcCount.value);
+            if (isNaN(pveCount) || isNaN(pkcCount)) {
+                continue;
+            }
+            localData[today.textContent] = { "PVE": pveCount, "PKC": pkcCount };
+        }
+        let data = await postJSON('cover', localStorage.token, localData);
+        if (!data) {
+            return;
+        }
+        updateScroeForm(data);
+    }
+
+    async function onRemoveButtonClick(e) {
+        let tfoot = getParentByTag(e.target, 'TFOOT');
+        let tbody = tfoot.previousElementSibling;
+        let checkbox = tbody.querySelectorAll('input:checked');
+        if (checkbox && checkbox.length == 0) {
+            alert("请勾选需要变更的远程指令");
+            return;
+        }
+        let localData = [];
+        for (let input of checkbox) {
+            let tr = getParentByTag(input, 'TR');
+            let today = tr.querySelector("td[name='today']");
+            if (!today) {
+                continue;
+            }
+            localData.push(today.textContent);
+        }
+        let data = await postJSON('remove', localStorage.token, localData);
+        if (!data) {
+            return;
+        }
+        updateScroeForm(data);
     }
 
     // 更新老播放器
@@ -536,6 +814,7 @@
         return label;
     }
 
+    // 复制链接
     async function copyVideoUrl() {
         const clipboard = navigator.clipboard;
         if (!clipboard) {
@@ -621,27 +900,32 @@
             judgeNext.setAttribute('onclick', "javascript:amsSubmit(135125, 628988);")
         }
         // 输入框
-        let pveInput = createPkcPveInput("pveCount");
-        let pkcInput = createPkcPveInput("pkcCount");
-        // 按钮
-        let updateButton = document.createElement("button");
-        updateButton.id = "updateButton";
-        updateButton.textContent = "修改"
+        if (!localStorage.pveCount) {
+            localStorage.pveCount = 0;
+        }
+        if (!localStorage.pkcCount) {
+            localStorage.pkcCount = 0;
+        }
+        let pveInput = createPkcPveInput("pveCount", localStorage.pveCount);
+        let pkcInput = createPkcPveInput("pkcCount", localStorage.pkcCount);
         // 表格
         let table = document.createElement('table');
         table.style = "margin-left: 7px;";
-        table.innerHTML = `<tr><td>${updateButton.outerHTML}</td><td>${pveInput.outerHTML}</td><td>${pkcInput.outerHTML}</td></tr><tr><th></th><th>PVE</th><th>PKC</th></tr>`;
-        table.querySelector('#updateButton').addEventListener('click', onUpdateButtonClick);
+        table.innerHTML = `<tr><th></th><th>PVE</th><th>PKC</th><th></th><th></th></tr>
+        <tr><td name=cmd></td><td>${pveInput.outerHTML}</td><td>${pkcInput.outerHTML}</td><td name=cmd></td></tr>`;
+        let cmd = table.querySelectorAll("td[name='cmd']");
+        cmd[0].appendChild(createFormButton("修改", onUpdateButtonClick));
+        cmd[1].appendChild(createFormButton("上传", onUploadButtonClick));
         // 生成布局
         popTeam.lastElementChild.appendChild(table);
     }
 
-    function createPkcPveInput(id) {
+    function createPkcPveInput(name, count) {
         var input = document.createElement("input");
-        input.id = id;
+        input.name = name;
         input.className = "txc";
         input.style = "margin-left: 1px;";
-        input.setAttribute('value', localStorage.getItem(id) || 0);
+        input.setAttribute('value', count);
         input.size = 1;
         return input;
     }
@@ -653,12 +937,24 @@
         }
         count = parseInt(count) + 1;
         localStorage.setItem(id, count);
-        popTeam.querySelector("#" + id).value = count;
+        popTeam.querySelector(`input[name=${id}]`).value = count;
     }
 
-    function onUpdateButtonClick() {
-        let pveCount = parseInt(popTeam.querySelector("#pveCount").value);
-        let pkcCount = parseInt(popTeam.querySelector("#pkcCount").value);
+    function updatePopForm() {
+        let pveInput = popTeam.querySelector("input[name='pveCount']");
+        let pkcInput = popTeam.querySelector("input[name='pkcCount']");
+        pveInput.value = localStorage.pveCount;
+        pkcInput.value = localStorage.pkcCount;
+    }
+
+    function onUpdateButtonClick(e) {
+        let tr = getParentByTag(e.target, 'TR');
+        let inputs = tr.querySelectorAll('input');
+        if (!inputs) {
+            return;
+        }
+        let pveCount = parseInt(inputs[0].value);
+        let pkcCount = parseInt(inputs[1].value);
         if (isNaN(pveCount) || isNaN(pkcCount)) {
             alert("请输入正确的数字");
             return;
@@ -666,6 +962,11 @@
         localStorage.setItem("pveCount", pveCount);
         localStorage.setItem("pkcCount", pkcCount);
         alert("修改成功");
+        let score = tr.querySelector('td[name=score]');
+        if (!score) {
+            return;
+        }
+        score.textContent = calculateScore(pveCount, pkcCount);
     };
 
 })();

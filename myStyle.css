@@ -3,9 +3,31 @@ div {overflow: visible;}
 .item .list li input[type='radio']    {zoom: 1.5;-moz-transform: scale(1.5);}
 .item .list li input[type='checkbox'] {zoom: 1.5;-moz-transform: scale(1.5);}
 
-/* 背景色 */
+/* 对话框 */
 dialog::backdrop {
   background-color: rgba(0, 0, 0, 0.4);
+}
+
+dialog table {
+    text-align:center;
+}
+dialog input{
+    text-align:center;
+    margin:5px;
+}
+dialog button{
+    padding: 2px 6px;
+    border: 0px;
+    background-color:#618fb2;
+    color:#fff;
+    margin-left: 5px;
+}
+
+.closeButton{
+    position:absolute;
+    top:0;
+    right:0;
+    border:none;
 }
 
 /* 滑块开关 */
