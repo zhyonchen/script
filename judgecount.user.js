@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         审判计数器
 // @namespace    https://greasyfork.org/zh-CN
-// @version      2.4
+// @version      2.5
 // @description  多功能计数
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*spxt/*
 // @match        https://dnf.qq.com/cp/*spxt/*
-// @updateURL    https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.meta.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/zhyonchen/script/judgecount.user.js
-// @icon         https://cdn.jsdelivr.net/gh/zhyonchen/script/logo.png
+// @updateURL    https://www.silksong.site/judgecount.meta.js
+// @downloadURL  https://www.silksong.site/judgecount.user.js
+// @icon         https://www.silksong.site/logo.png
 // @grant        none
 // ==/UserScript==
 
@@ -17,11 +17,10 @@
 
     const keyDocument = "https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values";
     const database = "https://data.silksong.site:8000/";
-    const staticFilePath = "https://cdn.jsdelivr.net/gh/zhyonchen/script/";
+    const staticFilePath = "https://www.silksong.site/";
     const defaultSettingFile = "defaultSetting.json";
     const myStyleFile = "myStyle.css";
     const anchorJson = { "setting": "设置", "score": "分数" };
-    const staticFileOption = { cache: "no-cache" };
 
     let keymap, parentElement;
     let logined = document.getElementById("logined");
@@ -40,8 +39,8 @@
     }
 
     async function loadResource() {
-        const defaultSettingFilePromise = fetchData(staticFilePath + defaultSettingFile, staticFileOption, 'json');
-        const myStyleFilePromise = fetchData(staticFilePath + myStyleFile, staticFileOption, 'text');
+        const defaultSettingFilePromise = fetchData(staticFilePath + defaultSettingFile, {}, 'json');
+        const myStyleFilePromise = fetchData(staticFilePath + myStyleFile, {}, 'text');
         let values = await Promise.all([defaultSettingFilePromise, myStyleFilePromise]);
         if (values[0]) {
             initAndUpdateSetting(values[0]);
@@ -50,7 +49,9 @@
             addGlobalStyle("myStyle", values[1]);
         } else {
             const myStyle = `div {overflow: visible;}
-            .closeButton {position:absolute;top:0;right:0;border:none;}`;
+            .closeButton {position:absolute;top:0;right:0;border:none;}
+            .item .list li input[type='radio']    {zoom: 1.5;-moz-transform: scale(1.5);}
+            .item .list li input[type='checkbox'] {zoom: 1.5;-moz-transform: scale(1.5);}`;
             addGlobalStyle("myStyle", myStyle);
         }
     }
@@ -531,7 +532,6 @@
             return;
         }
         let data = await postJSON("query", input.value, {});
-        window.console.log(data);
         if (!data) {
             return;
         }
@@ -543,24 +543,27 @@
         let dialog = logined.querySelector('dialog');
         let form = logined.querySelector('div');
         let thead = "<table><thead><th></th></th><th>日期</th><th>PVE</th><th>PKC</th><th>分数</th><th>指令</th></thead>";
-        let tbody = `<tbody></tbody>`;
-        let tfoot = `<tfoot><tr><td>总计</td><td name=day>0</td><td name=pve>0</td><td name=pkc>0</td><td name=score>0</td><td name=cmd></td><tr></tfoot></table>`
-        form.innerHTML = thead + tbody + tfoot;
-        let date = new Date();
-        let today = (date.getMonth() + 1) * 100 + date.getDate();
-        let localData = {};
-        localData[today] = { "PVE": localStorage.pveCount, "PKC": localStorage.pkcCount };
-        let tbodyElement = form.querySelector('tbody');
-        createScoreItem(tbodyElement, "本地", localData);
-        let total = createScoreItem(tbodyElement, "远程", data);
-        let tfootElement = form.querySelector('tfoot');
-        for (let key in total) {
-            let item = tfootElement.querySelector(`td[name=${key}]`);
-            if (item) {
-                item.innerHTML = total[key];
-            }
+        let localTbody = `<tbody name=local></tbody>`
+        let totalTbody = `<tbody name=total><tr><td><select><option value=thisMonth>本月</option><option value=lastMonth>上月</option><option value=all>全部</option></select></td><td name=totalDay>0</td><td name=pve>0</td><td name=pkc>0</td><td name=score>0</td><td name=cmd></td><tr></tbody>`;
+        let remoteTbody = `<tbody name=remote></tbody></table>`;
+        form.innerHTML = thead + localTbody + totalTbody + remoteTbody;
+        // 本地
+        let localElement = form.querySelector("tbody[name='local']");
+        createLocalScoreItem(localElement);
+        // 远程
+        let remoteElement = form.querySelector("tbody[name='remote']");
+        updateRemoteScoreItem("thisMonth", remoteElement, data);
+        localStorage.score = JSON.stringify(data);
+        // 总计
+        let totalElement = form.querySelector("tbody[name='total']");
+        let selectElement = totalElement.querySelector("select");
+        selectElement.addEventListener('change', onTotalSelectChange);
+        let result = AccumulateScore("thisMonth", remoteElement.querySelectorAll('tr'));
+        for (let key in result) {
+            let td = totalElement.querySelector(`td[name=${key}]`);
+            td.textContent = result[key];
         }
-        let cmd = tfootElement.querySelector("td[name='cmd']");
+        let cmd = totalElement.querySelector("td[name='cmd']");
         cmd.appendChild(createFormButton("修改", onCoverButtonClick));
         cmd.appendChild(createFormButton("删除", onRemoveButtonClick));
     }
@@ -571,6 +574,7 @@
         let extra = pve + pkc - 200;
         if (extra > 0) {
             if (extra > 100) {
+                //总视频量超出300归位
                 extra = 100;
             }
             score += extra * 0.5;
@@ -584,38 +588,102 @@
         return score > 300 ? 300 : score;
     }
 
-    function createScoreItem(tbody, text, data) {
-        let totalDay = Object.keys(data).length;
-        let totalPVE = 0,
-            totalPKC = 0,
-            totalScore = 0;
-        for (var key in data) {
+    function createLocalScoreItem(tbody) {
+        let date = new Date();
+        let thisMonth = date.getMonth() + 1;
+        let monthSelect = createDateSelect(thisMonth, 12);
+        monthSelect.addEventListener('change', onMonthSelectChange);
+        let daySelect = createDateSelect(date.getDate(), calculateDayCount(thisMonth));
+        let pveCount = parseInt(localStorage.pveCount);
+        let pkcCount = parseInt(localStorage.pkcCount);
+        let score = calculateScore(pveCount, pkcCount);
+        let tr = document.createElement('tr');
+        tr.innerHTML = `
+        <td>本地</td>
+        <td name="md"></td>
+        <td>${createPkcPveInput("pveCount",pveCount).outerHTML}</td>
+        <td>${createPkcPveInput("pkcCount",pkcCount).outerHTML}</td>
+        <td name="score">${score}</td>
+        <td name="cmd"></td>`
+        let md = tr.querySelector("td[name='md']");
+        md.appendChild(monthSelect);
+        md.appendChild(daySelect);
+        let cmd = tr.querySelector("td[name='cmd']");
+        cmd.appendChild(createFormButton("修改", onUpdateButtonClick));
+        cmd.appendChild(createFormButton("上传", onUploadButtonClick));
+        tbody.appendChild(tr);
+    }
+
+    function createDateSelect(index, num) {
+        let select = document.createElement('select');
+        for (let i = 1; i <= num; i++) {
+            let option = document.createElement('option');
+            option.textContent = i;
+            if (index == i) {
+                option.setAttribute('selected', '');
+            }
+            select.appendChild(option);
+        }
+        return select;
+    }
+
+    function calculateDayCount(month) {
+        let date = new Date();
+        date.setMonth(month);
+        date.setDate(0);
+        return date.getDate();
+    }
+
+    function onMonthSelectChange(e) {
+        let monthSelect = e.target;
+        let option = monthSelect.options[monthSelect.selectedIndex];
+        let daySelect = monthSelect.nextElementSibling;
+        daySelect.outerHTML = createDateSelect(1, calculateDayCount(option.textContent)).outerHTML;
+    }
+
+    function updateRemoteScoreItem(type, tbody, data) {
+        let date = new Date();
+        let localMonth;
+        switch (type) {
+            case "thisMonth":
+                localMonth = date.getMonth() + 1;
+                break;
+            case "lastMonth":
+                localMonth = date.getMonth();
+                break;
+            case "all":
+                localMonth = -1;
+                break;
+            default:
+                localMonth = date.getMonth() + 1;
+        }
+        tbody.innerHTML = "";
+        let keys = Object.keys(data);
+        for (let i = keys.length - 1; i >= 0; i--) {
+            let key = keys[i];
             let today = key;
+            if (localMonth != -1) {
+                let remoteMonth = Math.floor(today / 100);
+                if (remoteMonth != localMonth) {
+                    continue;
+                }
+            }
             let count = data[key];
             let pveCount = parseInt(count["PVE"]);
             let pkcCount = parseInt(count["PKC"]);
             let score = calculateScore(pveCount, pkcCount);
-            totalPVE += pveCount;
-            totalPKC += pkcCount;
-            totalScore += score;
             let tr = document.createElement('tr');
             tr.innerHTML = `
-            <td>${text}</td>
+            <td>远程</td>
             <td name="today">${today}</td>
             <td>${createPkcPveInput("pveCount",pveCount).outerHTML}</td>
             <td>${createPkcPveInput("pkcCount",pkcCount).outerHTML}</td>
             <td name="score">${score}</td>
-            <td></td>`
-            let td = tr.lastElementChild;
-            if (text == "本地") {
-                td.appendChild(createFormButton("修改", onUpdateButtonClick));
-                td.appendChild(createFormButton("上传", onUploadButtonClick));
-            } else {
-                td.appendChild(createCheckbox());
-            }
+            <td name="cmd"></td>`
+            let td = tr.querySelector("td[name='cmd']");
+            td.appendChild(createCheckbox());
             tbody.appendChild(tr);
         }
-        return { "day": totalDay, "pve": totalPVE, "pkc": totalPKC, "score": totalScore };
     }
 
     async function onUploadButtonClick(e) {
@@ -623,8 +691,20 @@
         let tr = td.parentElement;
         let today, pveCount, pkcCount;
         try {
-            let date = new Date();
-            today = (date.getMonth() + 1) * 100 + date.getDate();
+            let md = tr.querySelector("td[name='md']");
+            if (!md) {
+                let date = new Date();
+                today = (date.getMonth() + 1) * 100 + date.getDate();
+            } else {
+                let monthSelect = md.querySelector('select');
+                let daySelect = monthSelect.nextElementSibling;
+                let month = parseInt(monthSelect.options[monthSelect.selectedIndex].textContent);
+                let day = parseInt(daySelect.options[daySelect.selectedIndex].textContent);
+                if (isNaN(month) || isNaN(day)) {
+                    throw new error("请选择正确的日期");
+                }
+                today = month * 100 + day;
+            }
             pveCount = parseInt(tr.querySelector("input[name='pveCount']").value);
             pkcCount = parseInt(tr.querySelector("input[name='pkcCount']").value);
             if (isNaN(pveCount) || isNaN(pkcCount)) {
@@ -656,12 +736,58 @@
         }
     }
 
+    function onTotalSelectChange(e) {
+        let select = e.target;
+        let option = select.options[select.selectedIndex];
+        let table = getParentByTag(select, 'TABLE');
+        let tbody = table.querySelector("tbody[name='remote']");
+        if (localStorage.score) {
+            updateRemoteScoreItem(option.value, tbody, JSON.parse(localStorage.score));
+        }
+        let items = tbody.querySelectorAll('tr');
+        let result = AccumulateScore(option.value, items);
+        tbody = table.querySelector("tbody[name='total']");
+        for (let key in result) {
+            let td = tbody.querySelector(`td[name=${key}]`);
+            td.textContent = result[key];
+        }
+    }
+
+    function AccumulateScore(type, items) {
+        let date = new Date();
+        let thisMonth = date.getMonth() + 1;
+        let lastMonth = thisMonth - 1;
+        let totalDay = 0;
+        let totalPVE = 0;
+        let totalPKC = 0;
+        let totalScore = 0;
+        for (let i = 0; i < items.length; i++) {
+            let item = items[i];
+            let today = parseInt(item.querySelector("td[name='today']").textContent);
+            let res = Math.floor(today / 100);
+            if (type == "thisMonth" && res != thisMonth) {
+                continue;
+            }
+            if (type == "lastMonth" && res != lastMonth) {
+                continue;
+            }
+            let pve = parseInt(item.querySelector("input[name='pveCount']").value);
+            let pkc = parseInt(item.querySelector("input[name='pkcCount']").value);
+            let score = parseInt(item.querySelector("td[name='score']").textContent);
+            totalDay++;
+            totalPVE += pve;
+            totalPKC += pkc;
+            totalScore += score;
+        }
+        return { "totalDay": totalDay, "pve": totalPVE, "pkc": totalPKC, "score": totalScore };
+    }
+
     async function onCoverButtonClick(e) {
-        let tfoot = getParentByTag(e.target, 'TFOOT');
-        let tbody = tfoot.previousElementSibling;
+        let table = getParentByTag(e.target, 'TABLE');
+        let tbody = table.querySelector("tbody[name='remote']");
         let checkbox = tbody.querySelectorAll('input:checked');
         if (checkbox && checkbox.length == 0) {
-            alert("请勾选需要变更的远程指令");
+            alert("请勾选需要修改的远程指令滑块");
             return;
         }
         let localData = {};
@@ -688,11 +814,11 @@
     }
 
     async function onRemoveButtonClick(e) {
-        let tfoot = getParentByTag(e.target, 'TFOOT');
-        let tbody = tfoot.previousElementSibling;
+        let table = getParentByTag(e.target, 'TABLE');
+        let tbody = table.querySelector("tbody[name='remote']");
         let checkbox = tbody.querySelectorAll('input:checked');
         if (checkbox && checkbox.length == 0) {
-            alert("请勾选需要变更的远程指令");
+            alert("请勾选需要删除的远程指令滑块");
             return;
         }
         let localData = [];
@@ -962,7 +1088,7 @@
         localStorage.setItem("pveCount", pveCount);
         localStorage.setItem("pkcCount", pkcCount);
         alert("修改成功");
-        let score = tr.querySelector('td[name=score]');
+        let score = tr.querySelector("td[name='score']");
         if (!score) {
             return;
         }
