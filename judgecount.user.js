@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         审判计数器
-// @namespace    https://greasyfork.org/zh-CN
-// @version      2.5
+// @namespace    https://script.silksong.site
+// @version      2.5.5
 // @description  多功能计数
 // @author       Eirei
 // @match        http://dnf.qq.com/cp/*spxt/*
 // @match        https://dnf.qq.com/cp/*spxt/*
-// @updateURL    https://www.silksong.site/judgecount.meta.js
-// @downloadURL  https://www.silksong.site/judgecount.user.js
-// @icon         https://www.silksong.site/logo.png
+// @updateURL    https://script.silksong.site/judgecount.meta.js
+// @downloadURL  https://script.silksong.site/judgecount.user.js
+// @icon         https://script.silksong.site/logo.png
 // @grant        none
 // ==/UserScript==
 
@@ -16,11 +16,11 @@
     'use strict';
 
     const keyDocument = "https://developer.mozilla.org/zh-CN/docs/Web/API/KeyboardEvent/key/Key_Values";
-    const database = "https://data.silksong.site:8000/";
-    const staticFilePath = "https://www.silksong.site/";
-    const defaultSettingFile = "defaultSetting.json";
-    const myStyleFile = "myStyle.css";
-    const anchorJson = { "setting": "设置", "score": "分数" };
+    const database = "https://data.silksong.site:8000";
+    const staticFilePath = "https://script.silksong.site";
+    const defaultSettingFile = "/defaultSetting.json";
+    const myStyleFile = "/myStyle.css";
+    const anchorJson = { "setting": "设置", "score": "分数"};
 
     let keymap, parentElement;
     let logined = document.getElementById("logined");
@@ -54,6 +54,7 @@
             .item .list li input[type='checkbox'] {zoom: 1.5;-moz-transform: scale(1.5);}`;
             addGlobalStyle("myStyle", myStyle);
         }
+        updateMyStyle();
     }
     async function fetchData(url, option = {}, type = 'text') {
         callMaskDialog(true);
@@ -104,15 +105,45 @@
         }
     }
 
-    function addGlobalStyle(id, css) {
+    function addGlobalStyle(title, css) {
         let head, style;
         head = document.getElementsByTagName('head')[0];
         if (!head || !css) { return; }
         style = document.createElement('style');
-        style.id = id;
+        style.title = title;
         style.type = 'text/css';
         style.innerHTML = css;
         head.appendChild(style);
+    }
+
+    function changeGlobalStyle(title,selectorText,newStyleCss){
+        let styleSheetList = document.styleSheets;
+        let rules,i,j;
+        for(i = 0 ; i < styleSheetList.length; i++){
+            let styleSheet = styleSheetList[i];
+            if(!styleSheet||!styleSheet.title){
+                continue;
+            }
+            if(styleSheet.title == title){
+                rules = styleSheet.cssRules;
+                break;
+            }
+        }
+        for(j = 0; j< rules.length; j++){
+            if(!rules[j]){
+                continue;
+            } 
+            if(rules[j].selectorText == selectorText){
+                let style = rules[j].style;
+                for(let key in newStyleCss){
+                    if(!style[key]){
+                        continue;
+                    }
+                    style[key] = newStyleCss[key];
+                }
+                break;
+            }
+        }
     }
     // 加载配置
     async function getLocalSetting() {
@@ -131,17 +162,21 @@
         let oldSetting = localStorage.setting;
         localStorage.setting = JSON.stringify(newSetting);
         updateKeymap();
-        if (spsp1.style.display == 'none') {
-            return;
-        }
+        updateMyStyle();
         if (!oldSetting) {
             return;
         }
         oldSetting = JSON.parse(oldSetting);
+        if(spsp1.style.display == 'none'){
+            return;
+        }
+
         if (oldSetting.oldPlayer && oldSetting.oldPlayer.data == newSetting.oldPlayer.data) {
+            // 未修改播放器则只更新文本框
             updatePkcPveLayout();
             return;
         }
+        // 变换播放器
         continueJudge();
     }
 
@@ -153,7 +188,7 @@
     async function updateKeymap() {
         keymap = {};
         let setting = await getLocalSetting();
-        if (!setting || !setting.keyToggle.data) {
+        if (!setting || !setting.keyToggle || !setting.keyToggle.data) {
             return;
         }
         for (let key in setting) {
@@ -173,6 +208,19 @@
                 }
             }
         }
+    }
+
+    async function updateMyStyle(){
+        let setting = await getLocalSetting();
+        if (!setting || !setting.zoomInput) {
+            return;
+        }
+        let num = parseFloat(setting.zoomInput.data);
+        if(isNaN(num)){
+            return;
+        }
+        changeGlobalStyle("myStyle",".item .list li input[type=\"radio\"]", {"zoom":num ,"-moz-transform":`scale(${num})`});
+        changeGlobalStyle("myStyle",".item .list li input[type=\"checkbox\"]", {"zoom":num,"-moz-transform":`scale(${num})`});
     }
 
     // 监听按键抬起
@@ -352,6 +400,15 @@
                 data_li.appendChild(label);
                 ul.appendChild(data_li);
             }
+            if(item.type == "text"){
+                let data_li = document.createElement('li');
+                let input = document.createElement('input');
+                input.size = 4;
+                input.name = key;
+                input.value = item.data;
+                data_li.appendChild(input);
+                ul.appendChild(data_li);
+            }
             if (item.type == "keycode") {
                 let data_li = document.createElement('li');
                 for (let i = 0; i < item.data.length; i++) {
@@ -435,7 +492,9 @@
                 let type = item.type;
                 if (type == "toggle") {
                     item.data = input.checked;
-                    window.console.log(item.data);
+                }
+                if (type == "text"){
+                    item.data = input.value;
                 }
                 if (type == "keycode") {
                     let lastInput = inputs[i - 1];
@@ -566,6 +625,7 @@
         let cmd = totalElement.querySelector("td[name='cmd']");
         cmd.appendChild(createFormButton("修改", onCoverButtonClick));
         cmd.appendChild(createFormButton("删除", onRemoveButtonClick));
+        cmd.appendChild(createFormButton("全选", onSelectAllButtonClick));
     }
 
     function calculateScore(pve, pkc) {
@@ -629,8 +689,7 @@
 
     function calculateDayCount(month) {
         let date = new Date();
-        date.setMonth(month);
-        date.setDate(0);
+        date.setMonth(month,0);
         return date.getDate();
     }
 
@@ -835,6 +894,18 @@
             return;
         }
         updateScroeForm(data);
+    }
+
+    function onSelectAllButtonClick(e){
+        let table = getParentByTag(e.target, 'TABLE');
+        let tbody = table.querySelector("tbody[name='remote']");
+        let checkbox = tbody.querySelectorAll('input');
+        for(let i = 0; i<checkbox.length;i++){
+            if(!checkbox[i]){
+                continue;
+            }
+            checkbox[i].click();
+        }
     }
 
     // 更新老播放器

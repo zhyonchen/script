@@ -1,5 +1,5 @@
  {
-     "fileVersion": 2.3,
+     "fileVersion": 2.6,
      "oldPlayer":
      {  
          "title": "老播放器",
@@ -29,6 +29,11 @@
          "title": "显示键值",
          "type": "toggle",
          "data": false
+     },
+     "zoomInput":{
+        "title":"缩放选框",
+        "type":"text",
+        "data":"1.5"
      },
      "reloadKey":
      {
